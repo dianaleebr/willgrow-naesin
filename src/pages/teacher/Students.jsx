@@ -5,6 +5,56 @@ import { useAsync, Loading, ErrorBox, Empty } from '../../components/ui.jsx';
 import { useAuth } from '../../lib/auth.jsx';
 
 const HEAD = ['이름', '학교', '학년', '반', '아이디', '초기 비밀번호', '출판사(선택)'];
+const EMPTY = { name: '', school: '', grade: '', class_name: '', login_id: '', password: '1234', publisher_id: '' };
+
+// 한 명씩 입력해서 바로 계정 만들기
+function SingleForm({ pubs, onCreated }) {
+  const [f, setF] = useState(EMPTY);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const idOk = /^[a-z0-9_.-]{2,30}$/i.test(f.login_id.trim());
+  const ready = f.name.trim() && idOk && f.password.length >= 4;
+
+  const submit = async (e) => {
+    e.preventDefault(); if (!ready || busy) return;
+    setBusy(true); setMsg(null);
+    try {
+      await rpc('create_student_account', {
+        p_login_id: f.login_id.trim().toLowerCase(), p_password: f.password, p_name: f.name.trim(),
+        p_school: f.school.trim() || null, p_grade: f.grade ? Number(f.grade) : null,
+        p_class_name: f.class_name.trim() || null, p_publisher_id: f.publisher_id ? Number(f.publisher_id) : null,
+        p_role: 'student',
+      });
+      setMsg({ ok: true, text: `${f.name.trim()} 계정을 만들었어요. 아이디 ${f.login_id.trim().toLowerCase()} / 비밀번호 ${f.password}` });
+      // 같은 학교·학년·반·출판사는 남겨두고 이름·아이디만 비움 (같은 반 여러 명 연속 입력용)
+      setF({ ...f, name: '', login_id: '' });
+      onCreated();
+    } catch (err) { setMsg({ ok: false, text: err.message }); } finally { setBusy(false); }
+  };
+
+  return (
+    <form className="card stack" onSubmit={submit}>
+      <h3>학생 계정 만들기</h3>
+      <div className="row" style={{ gap: 8 }}>
+        <label className="stack" style={{ gap: 4, flex: '1 1 120px' }}><span className="muted small">이름 *</span><input className="input" value={f.name} onChange={set('name')} autoComplete="off" /></label>
+        <label className="stack" style={{ gap: 4, flex: '1 1 120px' }}><span className="muted small">아이디 *</span><input className="input mono" value={f.login_id} onChange={set('login_id')} autoComplete="off" placeholder="영문·숫자" /></label>
+        <label className="stack" style={{ gap: 4, flex: '1 1 100px' }}><span className="muted small">비밀번호 *</span><input className="input mono" value={f.password} onChange={set('password')} autoComplete="new-password" /></label>
+      </div>
+      <div className="row" style={{ gap: 8 }}>
+        <label className="stack" style={{ gap: 4, flex: '1 1 120px' }}><span className="muted small">학교</span><input className="input" value={f.school} onChange={set('school')} /></label>
+        <label className="stack" style={{ gap: 4, flex: '0 1 80px' }}><span className="muted small">학년</span><select className="input" value={f.grade} onChange={set('grade')}><option value="">-</option><option value={1}>1</option><option value={2}>2</option><option value={3}>3</option></select></label>
+        <label className="stack" style={{ gap: 4, flex: '1 1 90px' }}><span className="muted small">반</span><input className="input" value={f.class_name} onChange={set('class_name')} /></label>
+        <label className="stack" style={{ gap: 4, flex: '1 1 160px' }}><span className="muted small">출판사(교과서)</span><select className="input" value={f.publisher_id} onChange={set('publisher_id')}><option value="">-</option>{pubs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      </div>
+      <div className="row">
+        <button type="submit" className="btn primary" disabled={!ready || busy}>{busy ? '만드는 중…' : '계정 만들기'}</button>
+        <span className="muted small">{f.login_id && !idOk ? '아이디는 영문·숫자 2~30자' : f.password.length < 4 ? '비밀번호는 4자 이상' : '학교·학년·반·출판사는 다음 학생에게 그대로 남아요'}</span>
+      </div>
+      {msg && <div className={`alert ${msg.ok ? 'ok' : 'err'}`}>{msg.text}</div>}
+    </form>
+  );
+}
 
 export default function Students() {
   const { profile } = useAuth();
@@ -17,6 +67,7 @@ export default function Students() {
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState('');
   const [msg, setMsg] = useState('');
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   const parse = () => {
     const lines = paste.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -44,20 +95,24 @@ export default function Students() {
     if (error) setMsg('저장 실패: ' + error.message); else st.reload();
   };
 
-  if (st.loading) return <Loading />; if (st.error) return <ErrorBox error={st.error} />;
+  if (st.loading && !st.data) return <Loading />; if (st.error) return <ErrorBox error={st.error} />;
   const { students, pubs } = st.data;
   const list = students.filter((s) => !filter || [s.name, s.school, s.class_name, s.login_id].some((v) => (v || '').includes(filter)));
 
   return (
     <div className="stack">
       <h1>학생 계정</h1>
+      <SingleForm pubs={pubs} onCreated={() => st.reload()} />
       <div className="card stack">
+        <div className="row between"><h3>엑셀 붙여넣기로 여러 명 만들기</h3><button className="btn sm" onClick={() => setBulkOpen(!bulkOpen)}>{bulkOpen ? '접기' : '열기'}</button></div>
+        {bulkOpen && <>
         <h3>계정 일괄 생성</h3>
         <div className="muted small">엑셀에서 아래 순서의 열을 복사해 붙여넣으세요 (탭 또는 쉼표 구분). 첫 줄이 제목이면 자동으로 건너뜁니다.<br /><b>{HEAD.join(' | ')}</b></div>
         <textarea className="input mono" rows={5} value={paste} onChange={(e) => setPaste(e.target.value)} placeholder={'김민준\t거제중\t2\t중2A\tminjun\t1234\t동아(윤정미)\n이서연\t거제중\t2\t중2A\tseoyeon\t1234'} />
         {preview.length > 0 && <div className="tbl-wrap"><table className="tbl"><thead><tr>{HEAD.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{preview.map((r, i) => <tr key={i}><td>{r.name}</td><td>{r.school}</td><td>{r.grade}</td><td>{r.class_name}</td><td className="mono">{r.login_id}</td><td className="mono">{r.password}</td><td>{r.publisher}</td></tr>)}</tbody></table></div>}
         <div className="row"><button className="btn primary" disabled={!preview.length || busy} onClick={create}>{busy ? '생성 중…' : `${preview.length}명 계정 만들기`}</button><span className="muted small">아이디는 영문·숫자만, 비밀번호는 4자 이상</span></div>
         {result && <div className="stack">{result.map((r, i) => <div key={i} className={`alert ${r.ok ? 'ok' : 'err'}`}>{r.login_id}: {r.message}</div>)}</div>}
+        </>}
       </div>
 
       {msg && <div className="alert ok">{msg}</div>}

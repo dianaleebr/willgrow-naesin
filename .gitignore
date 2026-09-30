@@ -1,0 +1,8 @@
+node_modules
+dist
+.env
+.env.local
+*.log
+
+# 저작권 자료(교과서 본문·대화문 등) — 절대 GitHub에 올리지 않음. DB에만 업로드
+content/

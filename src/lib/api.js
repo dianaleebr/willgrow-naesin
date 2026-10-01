@@ -82,7 +82,7 @@ export function blankQuestions(items, unitId, source /* dialogue | reading */) {
 export function examQuestions(qs, unitId) {
   return qs.map((q) => ({
     key: `exam-${q.id}`, item_type: 'exam', item_id: q.id, unit_id: unitId, sub_mode: q.qtype,
-    kind: q.qtype === 'mc' ? 'choice' : 'text', prompt: q.question, choices: q.choices, answer: q.answer, explanation: q.explanation,
+    kind: q.qtype === 'mc' ? 'choice' : 'text', prompt: q.question, choices: q.choices, answer: q.answer, explanation: q.explanation, passageKo: q.passage_ko || null,
     tag: [q.school, q.year, q.term].filter(Boolean).join(' '), placeholder: '답 입력',
     grade: (a) => (q.qtype === 'mc' ? gradeChoice(a, q.answer) : gradeText(a, q.answer)), display: q.question.replace(/<\/?u>/g, '').slice(0, 60),
   }));

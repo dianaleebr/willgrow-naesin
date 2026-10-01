@@ -120,8 +120,10 @@ create table if not exists public.exam_questions (
   choices text[],                     -- 객관식 선택지
   answer text not null,               -- 객관식: 번호("3"), 서술형: 정답 ("a / b" 복수 가능)
   explanation text,
+  passage_ko text,                    -- 지문/제시문 해석 (오답노트용)
   sort_order int default 0
 );
+alter table public.exam_questions add column if not exists passage_ko text;
 
 -- ------------------------------------------------------------
 -- 3. 학습 기록 / 오답노트
@@ -673,15 +675,28 @@ begin
     end loop;
   end if;
 
+  -- 대화문 빈칸(핵심 표현): [{dialogue_index(0부터), line_index(0부터), prompt, answers[], ko, explanation}]
+  if p ? 'dialogue_blanks' and jsonb_typeof(p->'dialogue_blanks') = 'array' and jsonb_array_length(p->'dialogue_blanks') > 0 then
+    delete from public.blank_items where unit_id = v_unit and source = 'dialogue';
+    i := 0;
+    for q in select * from jsonb_array_elements(p->'dialogue_blanks') loop
+      i := i + 1;
+      insert into public.blank_items(unit_id, source, difficulty, dialogue_line_id, prompt, answers, ko, explanation, sort_order)
+      select v_unit, 'dialogue', null, dl.id, coalesce(q->>'prompt',''), array(select jsonb_array_elements_text(q->'answers')), q->>'ko', q->>'explanation', i
+        from public.dialogues dg join public.dialogue_lines dl on dl.dialogue_id = dg.id
+       where dg.unit_id = v_unit and dg.sort_order = (q->>'dialogue_index')::int + 1 and dl.sort_order = (q->>'line_index')::int + 1;
+    end loop;
+  end if;
+
   i := 0;
   for q in select * from jsonb_array_elements(coalesce(p->'exam_questions','[]'::jsonb)) loop
     i := i + 1;
-    insert into public.exam_questions(unit_id, school, year, term, qtype, question, choices, answer, explanation, sort_order)
+    insert into public.exam_questions(unit_id, school, year, term, qtype, question, choices, answer, explanation, passage_ko, sort_order)
     values (v_unit, q->>'school', nullif(q->>'year','')::int, q->>'term',
       case when q->>'type' in ('mc','객관식') then 'mc' else 'essay' end,
       q->>'question',
       case when q ? 'choices' and jsonb_typeof(q->'choices')='array' then array(select jsonb_array_elements_text(q->'choices')) else null end,
-      q->>'answer', q->>'explanation', i);
+      q->>'answer', q->>'explanation', q->>'passage_ko', i);
   end loop;
 
   return v_unit;

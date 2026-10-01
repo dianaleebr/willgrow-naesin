@@ -89,3 +89,12 @@ export function Empty({ children }) { return <div className="card soft center mu
 export const pctClass = (p) => (p >= 80 ? 'c-green' : p >= 50 ? 'c-yellow' : 'c-red');
 export const gradeLabel = (u) => `${u?.publishers?.level || '중'}${u?.grade ?? ''}`;
 export const unitLabel = (u) => u ? `${u.publishers?.name ? u.publishers.name + ' ' : ''}${gradeLabel(u)} Lesson ${u.unit_no}${u.title ? ' · ' + u.title : ''}` : '';
+
+// 기출문제 텍스트의 <u>…</u>(밑줄) 표시를 실제 밑줄로 렌더링
+export function RichText({ text }) {
+  const str = String(text ?? '');
+  if (!str.includes('<u>')) return str;
+  const parts = str.split(/(<u>[\s\S]*?<\/u>)/g);
+  return parts.map((p, i) => p.startsWith('<u>') ? <u key={i} style={{ textDecorationThickness: 2, textUnderlineOffset: 3 }}>{p.slice(3, -4)}</u> : <span key={i}>{p.replace(/<\/?u?>?$/g, '').replace(/<\/?u>/g, '')}</span>);
+}
+export const plainText = (s) => String(s ?? '').replace(/<\/?u>/g, '');

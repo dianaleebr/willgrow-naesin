@@ -73,7 +73,8 @@ function JsonUpload({ onDone }) {
         n += 1; setProgress(`${n}/${arr.length} · ${p.publisher} ${p.level || '중'}${p.grade} Lesson ${p.unit} 등록 중…`);
         last = await rpc('import_unit', { p, p_replace: true });
         if (genBlanks) {
-          await rpc('generate_blanks', { p_unit_id: last, p_source: 'dialogue' });
+          // 핵심 표현 대화문 빈칸(dialogue_blanks)이 JSON에 들어 있으면 자동 생성으로 덮어쓰지 않음
+          if (!(Array.isArray(p.dialogue_blanks) && p.dialogue_blanks.length)) await rpc('generate_blanks', { p_unit_id: last, p_source: 'dialogue' });
           // 워크북형 빈칸(blanks)이 JSON에 들어 있으면 자동 생성으로 덮어쓰지 않음
           if (!(Array.isArray(p.blanks) && p.blanks.length)) await rpc('generate_blanks', { p_unit_id: last, p_source: 'reading' });
         }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { listWrongNotes, questionsFromWrongNotes, ITEM_TYPE_LABEL, DIFF_LABEL } from '../../lib/api.js';
 import { supabase } from '../../lib/supabase.js';
-import { useAsync, Loading, ErrorBox, Empty, unitLabel } from '../../components/ui.jsx';
+import { useAsync, Loading, ErrorBox, Empty, unitLabel, RichText } from '../../components/ui.jsx';
 import QuizRunner from '../../components/QuizRunner.jsx';
 
 export default function WrongNotes() {
@@ -60,7 +60,7 @@ export default function WrongNotes() {
 function NoteText({ n }) {
   const st = useAsync(async () => {
     if (n.item_type === 'word') { const { data } = await supabase.from('words').select('en, ko').eq('id', n.item_id).maybeSingle(); return data ? `${data.en} — ${data.ko}` : '(삭제된 단어)'; }
-    if (n.item_type === 'exam') { const { data } = await supabase.from('exam_questions').select('question, answer, explanation, qtype, choices').eq('id', n.item_id).maybeSingle(); return data ? { text: data.question.slice(0, 90), answer: data.qtype === 'mc' ? `${data.answer}번 ${data.choices?.[Number(data.answer) - 1] ?? ''}` : data.answer, explanation: data.explanation } : '(삭제된 문제)'; }
+    if (n.item_type === 'exam') { const { data } = await supabase.from('exam_questions').select('question, answer, explanation, qtype, choices').eq('id', n.item_id).maybeSingle(); return data ? { text: (data.question.startsWith('[지문]') && data.question.includes('\n\n') ? data.question.slice(data.question.indexOf('\n\n') + 2) : data.question).slice(0, 160), answer: data.qtype === 'mc' ? `${data.answer}번 ${data.choices?.[Number(data.answer) - 1] ?? ''}` : data.answer, explanation: data.explanation } : '(삭제된 문제)'; }
     const { data } = await supabase.from('blank_items').select('prompt, answers, ko, explanation').eq('id', n.item_id).maybeSingle();
     if (!data) return '(삭제된 문항)';
     let i = 0; return { text: data.prompt ? data.prompt.replace(/___/g, () => `[${data.answers[i++] ?? ''}]`) : `[영작] ${data.ko} → ${data.answers[0]}`, explanation: data.explanation };
@@ -68,6 +68,6 @@ function NoteText({ n }) {
   if (st.loading) return <div className="small muted">…</div>;
   const v = st.data;
   if (typeof v === 'string') return <div className="en small">{v}</div>;
-  return <div className="small"><div className="en">{v.text}</div>{v.answer && <div className="green">정답: {v.answer}</div>}{v.explanation && <div className="muted" style={{ marginTop: 2 }}>해설: {v.explanation}</div>}</div>;
+  return <div className="small"><div className="en"><RichText text={v.text} /></div>{v.answer && <div className="green">정답: {v.answer}</div>}{v.explanation && <div className="muted" style={{ marginTop: 2 }}>해설: {v.explanation}</div>}</div>;
 }
 export { unitLabel };

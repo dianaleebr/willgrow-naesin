@@ -33,7 +33,6 @@ export default function Login() {
         <label className="check"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> 로그인 상태 유지</label>
         {err && <div className="error">{err}</div>}
         <button className="btn primary lg block" disabled={busy}>{busy ? '로그인 중…' : '로그인'}</button>
-        <div className="muted small center">회원가입은 없어요. 아이디·비밀번호는 선생님께 받으세요.</div>
       </form>
     </div>
   );

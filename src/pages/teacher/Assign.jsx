@@ -27,15 +27,16 @@ function CheckGroup({ title, items, selected, onChange, render, compact }) {
 // 숙제 배정 + 수업 모드
 export default function Assign() {
   const { profile } = useAuth();
-  const meta = useAsync(async () => ({
-    classes: [...new Set((await supabase.from('profiles').select('class_name').eq('role', 'student').then(unwrap)).map((x) => x.class_name).filter(Boolean))].sort(),
-    units: await listUnits(null, null),
-  }), []);
+  const meta = useAsync(async () => {
+    const students = await supabase.from('profiles').select('class_name, grade, publisher_id').eq('role', 'student').then(unwrap);
+    return { students, classes: [...new Set(students.map((x) => x.class_name).filter(Boolean))].sort(), units: await listUnits(null, null) };
+  }, []);
   const hw = useAsync(() => supabase.from('homework').select('*, units(unit_no, grade, title, publishers(name, level)), homework_completions(student_id)').order('due_date', { ascending: false }).limit(60).then(unwrap), []);
   const live = useAsync(() => supabase.from('live_sessions').select('*, units(unit_no, grade, title, publishers(name, level))').eq('active', true).order('created_at', { ascending: false }).then(unwrap), []);
 
   const [cls, setCls] = useState('');
   const [pub, setPub] = useState('');                    // 출판사 필터 ('' = 전체)
+  const [showAll, setShowAll] = useState(false);         // 반 학년과 무관하게 모든 유닛 보기
   const [unitSel, setUnitSel] = useState(new Set());     // 선택한 유닛 id
   const [matSel, setMatSel] = useState(new Set(['word_test'])); // 선택한 자료
   const [diffSel, setDiffSel] = useState(new Set(['w2'])); // 본문 빈칸 난이도
@@ -50,15 +51,26 @@ export default function Assign() {
     const units = meta.data?.units || [];
     const sorted = [...units].sort((a, b) => (a.publishers?.name || '').localeCompare(b.publishers?.name || '', 'ko') || (a.grade - b.grade) || (a.unit_no - b.unit_no));
     const map = new Map();
-    for (const u of sorted) { const key = `${u.publishers?.name || '(출판사 없음)'} ${gradeLabel(u)}`; if (!map.has(key)) map.set(key, { key, pub: u.publishers?.name || '', units: [] }); map.get(key).units.push(u); }
+    for (const u of sorted) { const key = `${u.publishers?.name || '(출판사 없음)'} ${gradeLabel(u)}`; if (!map.has(key)) map.set(key, { key, pub: u.publishers?.name || '', pubId: u.publisher_id, level: u.publishers?.level || '중', grade: u.grade, units: [] }); map.get(key).units.push(u); }
     return [...map.values()];
   }, [meta.data]);
-  const pubNames = useMemo(() => [...new Set(groups.map((g) => g.pub))], [groups]);
-  const visible = pub ? groups.filter((g) => g.pub === pub) : groups;
 
   if (meta.loading) return <Loading />; if (meta.error) return <ErrorBox error={meta.error} />;
-  const { classes, units } = meta.data;
+  const { classes, units, students } = meta.data;
   const className = cls || classes[0] || '';
+
+  // 반 이름(예: "중2A", "고1 심화")에서 학년을 읽고, 없으면 그 반 학생들의 학년·출판사로 범위를 정함
+  const inClass = students.filter((s) => s.class_name === className);
+  const m = /(중|고)\s*([1-3])/.exec(className || '');
+  const classLevel = m ? m[1] : null;
+  const classGrade = m ? Number(m[2]) : (inClass.map((s) => s.grade).filter(Boolean).sort((a, b) => inClass.filter((s) => s.grade === b).length - inClass.filter((s) => s.grade === a).length)[0] || null);
+  const classPubIds = new Set(inClass.map((s) => s.publisher_id).filter(Boolean));
+  const inScope = (g) => (!classGrade || g.grade === classGrade) && (!classLevel || g.level === classLevel) && (classPubIds.size === 0 || classPubIds.has(g.pubId));
+  const scoped = showAll ? groups : groups.filter(inScope);
+  const pubNames = [...new Set(scoped.map((g) => g.pub))];
+  const visible = pub && pubNames.includes(pub) ? scoped.filter((g) => g.pub === pub) : scoped;
+  const scopeLabel = showAll ? '전체 유닛' : [classLevel ? `${classLevel}${classGrade || ''}` : (classGrade ? `${classGrade}학년` : null), classPubIds.size ? [...classPubIds].map((id) => units.find((u) => u.publisher_id === id)?.publishers?.name).filter(Boolean).join('·') : null].filter(Boolean).join(' · ') || '전체 유닛';
+  const changeClass = (v) => { setCls(v); setPub(''); setUnitSel(new Set()); };
   const needDiff = matSel.has('reading_blank');
   const unitIds = units.filter((u) => unitSel.has(u.id)).map((u) => u.id);
   const materials = MATERIALS.filter((m) => matSel.has(m.key)).map((m) => m.key);
@@ -111,7 +123,7 @@ export default function Assign() {
       {classes.length === 0 && <Empty>학생 계정에 "반"이 있어야 배정할 수 있어요.</Empty>}
       <div className="card stack">
         <div className="row" style={{ gap: 12, alignItems: 'flex-end' }}>
-          <div><label className="field">반</label><select className="input" value={className} onChange={(e) => setCls(e.target.value)}>{classes.map((c) => <option key={c}>{c}</option>)}</select></div>
+          <div><label className="field">반</label><select className="input" value={className} onChange={(e) => changeClass(e.target.value)}>{classes.map((c) => <option key={c}>{c}</option>)}</select></div>
           <div className="grow"><label className="field">출판사</label>
             <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
               <button type="button" className={`btn sm ${pub === '' ? 'primary' : ''}`} onClick={() => setPub('')}>전체</button>
@@ -121,11 +133,14 @@ export default function Assign() {
         </div>
 
         <div className="row between" style={{ alignItems: 'center' }}>
-          <label className="field" style={{ margin: 0 }}>유닛 <span className="muted small">({unitIds.length}개 선택)</span></label>
-          {unitIds.length > 0 && <button type="button" className="btn sm ghost" onClick={() => setUnitSel(new Set())}>선택 모두 해제</button>}
+          <label className="field" style={{ margin: 0 }}>유닛 <span className="muted small">({unitIds.length}개 선택 · 범위: {scopeLabel})</span></label>
+          <div className="row" style={{ gap: 6 }}>
+            {unitIds.length > 0 && <button type="button" className="btn sm ghost" onClick={() => setUnitSel(new Set())}>선택 모두 해제</button>}
+            {groups.length !== scoped.length || showAll ? <button type="button" className="btn sm ghost" onClick={() => { setShowAll(!showAll); setPub(''); }}>{showAll ? '이 반 범위만 보기' : '전체 유닛 보기'}</button> : null}
+          </div>
         </div>
         <div className="stack" style={{ gap: 12, maxHeight: 320, overflowY: 'auto', padding: '4px 2px', border: '1px solid var(--line, #e5e5e5)', borderRadius: 10 }}>
-          {visible.length === 0 ? <Empty>유닛이 없어요. 콘텐츠에서 먼저 올려 주세요.</Empty> : visible.map((g) => (
+          {visible.length === 0 ? <Empty>{groups.length === 0 ? '유닛이 없어요. 콘텐츠에서 먼저 올려 주세요.' : `${className} 반 범위(${scopeLabel})에 맞는 유닛이 없어요. "전체 유닛 보기"를 눌러 보세요.`}</Empty> : visible.map((g) => (
             <div key={g.key} style={{ padding: '4px 8px' }}>
               <CheckGroup title={g.key} items={g.units} selected={unitSel} onChange={setUnitSel} compact render={(u) => <span>L{u.unit_no}{u.title ? <span className="muted small"> {u.title}</span> : null}</span>} />
             </div>

@@ -133,7 +133,7 @@ export function WrongTop() {
 function NoteText({ n }) {
   const st = useAsync(async () => {
     if (n.item_type === 'word') { const { data } = await supabase.from('words').select('en, ko').eq('id', n.item_id).maybeSingle(); return data ? `${data.en} — ${data.ko}` : '(삭제됨)'; }
-    if (n.item_type === 'exam') { const { data } = await supabase.from('exam_questions').select('question').eq('id', n.item_id).maybeSingle(); return data ? data.question.slice(0, 70) : '(삭제됨)'; }
+    if (n.item_type === 'exam') { const { data } = await supabase.from('exam_questions').select('question').eq('id', n.item_id).maybeSingle(); return data ? data.question.replace(/<\/?u>/g, '').slice(0, 70) : '(삭제됨)'; }
     const { data } = await supabase.from('blank_items').select('prompt, answers, ko').eq('id', n.item_id).maybeSingle();
     return data ? (data.prompt ? data.prompt.replace(/___/g, `[${data.answers.join('|')}]`) : `[영작] ${data.answers[0]}`) : '(삭제됨)';
   }, [n.id]);

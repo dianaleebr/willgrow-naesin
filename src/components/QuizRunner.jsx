@@ -134,6 +134,7 @@ export default function QuizRunner({ questions: initialQuestions, mode = 'homewo
           <b>{lastCorrect ? '정답' : '오답'}</b>
           {!lastCorrect && <div className="mt" style={{ marginTop: 6 }}>정답: <b className="en">{q.kind === 'choice' ? `${q.answer}번 — ${plainText(q.choices?.[Number(q.answer) - 1] ?? '')}` : q.answer}</b></div>}
           {q.explanation && <div className="muted small" style={{ marginTop: 4 }}>{q.explanation}</div>}
+          {!lastCorrect && q.passageKo && <PassageKo text={q.passageKo} />}
         </div>
       )}
 
@@ -230,6 +231,18 @@ export function ResultScreen({ title, results, mode, onExit, homework }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// 틀린 기출문제의 지문 해석 (오답노트에서도 사용)
+export function PassageKo({ text, open: init = false }) {
+  const [open, setOpen] = useState(init);
+  if (!text) return null;
+  return (
+    <div className="passage-ko" style={{ marginTop: 8, borderTop: '1px dashed var(--line, #ddd)', paddingTop: 6 }}>
+      <button type="button" className="btn sm ghost" onClick={() => setOpen((v) => !v)}>{open ? '지문 해석 닫기' : '지문 해석 보기'}</button>
+      {open && <div className="small" style={{ marginTop: 6, whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{text}</div>}
     </div>
   );
 }

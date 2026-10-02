@@ -47,6 +47,8 @@ print('total', total)
 # 기출문제 지문 해석(passage_ko) 붙이기
 import subprocess
 subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'exam_translate.py'), OUT], check=True)
+# 해설 사전(_explanations.json) 적용 — 해설 없는 기출·대화문 빈칸·본문 빈칸(w3)
+subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'add_explanations.py'), OUT], check=True)
 
 # bundles 다시 묶기
 bd = os.path.join(OUT, 'bundles'); os.makedirs(bd, exist_ok=True)

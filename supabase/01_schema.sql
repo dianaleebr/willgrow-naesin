@@ -155,8 +155,10 @@ create table if not exists public.wrong_notes (
   status text not null default 'open' check (status in ('open','resolved')),
   last_wrong_at timestamptz default now(),
   resolved_at timestamptz,
+  memo text,                          -- 학생이 직접 쓴 오답 정리
   unique (student_id, item_type, item_id, sub_mode)
 );
+alter table public.wrong_notes add column if not exists memo text;
 create index if not exists wrong_notes_student_idx on public.wrong_notes(student_id, status);
 
 -- ------------------------------------------------------------
@@ -807,3 +809,13 @@ end;
 $$;
 
 grant execute on all functions in schema public to authenticated;
+
+-- 오답노트 학생 메모
+create or replace function public.set_wrong_note_memo(p_id bigint, p_memo text)
+returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  update public.wrong_notes set memo = nullif(trim(p_memo), '') where id = p_id and student_id = auth.uid();
+end;
+$$;
+grant execute on function public.set_wrong_note_memo(bigint, text) to authenticated;

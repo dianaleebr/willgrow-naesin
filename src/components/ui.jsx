@@ -37,6 +37,7 @@ export function TopBar({ title, back }) {
       {title && <span style={{ fontWeight: 700, fontSize: 15 }}>{title}</span>}
       <div className="who">
         {profile && <span><b>{profile.name}</b>{profile.role === 'teacher' && !/선생님$/.test(profile.name) ? ' 선생님' : ''}</span>}
+        <button className="btn ghost sm" onClick={() => nav('/password')} title="비밀번호 바꾸기">🔑</button>
         <button className="btn ghost sm" onClick={logout}>로그아웃</button>
       </div>
     </header>

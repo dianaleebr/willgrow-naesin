@@ -162,22 +162,37 @@ export function ReadingBlank() {
 export function Exam() {
   const { unitId } = useParams(); const mode = useMode();
   const st = useAsync(async () => ({ unit: await getUnit(unitId), qs: await listExam(unitId), wrong: await listWrongNotes('open', { itemType: 'exam', unitId: Number(unitId) }) }), [unitId]);
-  const [filter, setFilter] = useState({ school: '', year: '', type: '' });
+  const [term, setTerm] = useState('');   // 회차: PRE-STEP / 1회 / 2회 …
+  const [qtype, setQtype] = useState('');  // '' | mc | essay
   const [run, setRun] = useState(null); const [runMode, setRunMode] = useState('homework'); const [busy, setBusy] = useState(false);
   if (st.loading) return <Loading />; if (st.error) return <ErrorBox error={st.error} />;
   const { unit, qs, wrong } = st.data;
   const retryWrong = async () => { setBusy(true); try { const list = await questionsFromWrongNotes(wrong); setRunMode('retry'); setRun(list); } finally { setBusy(false); } };
-  const schools = [...new Set(qs.map((q) => q.school).filter(Boolean))]; const years = [...new Set(qs.map((q) => q.year).filter(Boolean))].sort();
-  const sel = qs.filter((q) => (!filter.school || q.school === filter.school) && (!filter.year || String(q.year) === filter.year) && (!filter.type || q.qtype === filter.type));
-  if (run) return <QuizRunner questions={run} mode={runMode === 'retry' ? 'retry' : mode} title={runMode === 'retry' ? `기출문제 오답 다시 풀기 (${run.length})` : '기출문제'} homework={runMode === 'retry' ? undefined : { unitId: Number(unitId), material: 'exam' }} onExit={() => { setRun(null); setRunMode('homework'); st.reload(); }} />;
+  const termLabel = (t) => String(t || '').replace(/^예상문제\s*/, '') || '기타';
+  const termOrder = (t) => { const l = termLabel(t); if (/pre/i.test(l)) return 0; const m = l.match(/(\d+)/); return m ? Number(m[1]) : 99; };
+  const terms = [...new Set(qs.map((q) => q.term || ''))].sort((a, b) => termOrder(a) - termOrder(b));
+  const sel = qs.filter((q) => (!term || (q.term || '') === term) && (!qtype || q.qtype === qtype));
+  if (run) return <QuizRunner questions={run} mode={runMode === 'retry' ? 'retry' : mode} title={runMode === 'retry' ? `기출문제 오답 다시 풀기 (${run.length})` : `기출문제${term ? ' · ' + termLabel(term) : ''}`} homework={runMode === 'retry' ? undefined : { unitId: Number(unitId), material: 'exam' }} onExit={() => { setRun(null); setRunMode('homework'); st.reload(); }} />;
   return (
     <div className="stack">
       <Head unit={unit} title="기출문제" />
       {qs.length === 0 ? <Empty>등록된 기출문제가 없어요.</Empty> : (<>
-        <div className="card grid3">
-          <div><label className="field">학교</label><select className="input" value={filter.school} onChange={(e) => setFilter({ ...filter, school: e.target.value })}><option value="">전체</option>{schools.map((s) => <option key={s}>{s}</option>)}</select></div>
-          <div><label className="field">연도</label><select className="input" value={filter.year} onChange={(e) => setFilter({ ...filter, year: e.target.value })}><option value="">전체</option>{years.map((y) => <option key={y}>{y}</option>)}</select></div>
-          <div><label className="field">유형</label><select className="input" value={filter.type} onChange={(e) => setFilter({ ...filter, type: e.target.value })}><option value="">전체</option><option value="mc">객관식</option><option value="essay">서술형</option></select></div>
+        <div className="card stack" style={{ gap: 10 }}>
+          <div>
+            <label className="field">회차</label>
+            <div className="row" style={{ flexWrap: 'wrap' }}>
+              <button className={`btn sm ${term === '' ? 'primary' : ''}`} onClick={() => setTerm('')}>전체 ({qs.length})</button>
+              {terms.map((t) => <button key={t} className={`btn sm ${term === t ? 'primary' : ''}`} onClick={() => setTerm(t)}>{termLabel(t)} ({qs.filter((q) => (q.term || '') === t).length})</button>)}
+            </div>
+          </div>
+          <div>
+            <label className="field">유형</label>
+            <div className="toggle">
+              <button className={qtype === '' ? 'on' : ''} onClick={() => setQtype('')}>전체</button>
+              <button className={qtype === 'mc' ? 'on' : ''} onClick={() => setQtype('mc')}>객관식</button>
+              <button className={qtype === 'essay' ? 'on' : ''} onClick={() => setQtype('essay')}>서술형</button>
+            </div>
+          </div>
         </div>
         <div className="muted">{sel.length}문항 (객관식 {sel.filter((q) => q.qtype === 'mc').length} · 서술형 {sel.filter((q) => q.qtype === 'essay').length})</div>
         <button className="btn primary lg block" disabled={!sel.length} onClick={() => { setRunMode('homework'); setRun(examQuestions(sel, Number(unitId))); }}>풀기 시작</button>

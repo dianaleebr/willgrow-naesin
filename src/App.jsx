@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './lib/auth.jsx';
 import { TopBar, BottomNav, Splash, useAsync } from './components/ui.jsx';
 import { countOpenWrong } from './lib/api.js';
 import Login from './pages/Login.jsx';
+import Password from './pages/Password.jsx';
 import Home from './pages/student/Home.jsx';
 import { UnitList, UnitMenu } from './pages/student/Units.jsx';
 import { Words, WordTest, Dialogue, DialogueBlank, Reading, ReadingBlank, Exam } from './pages/student/Materials.jsx';
@@ -24,6 +25,7 @@ function StudentShell() {
       <main className="page">
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/password" element={<Password />} />
           <Route path="/units" element={<UnitList />} />
           <Route path="/unit/:unitId" element={<UnitMenu />} />
           <Route path="/unit/:unitId/words" element={<Words />} />
@@ -50,6 +52,7 @@ function TeacherShell() {
       <nav className="tnav">{tabs.map(([to, l]) => <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => (isActive ? 'on' : '')}>{l}</NavLink>)}</nav>
       <main className="page wide">
         <Routes>
+          <Route path="/password" element={<Password />} />
           <Route path="/" element={<Dashboard />} />
           <Route path="/students" element={<Students />} />
           <Route path="/content" element={<Content />} />

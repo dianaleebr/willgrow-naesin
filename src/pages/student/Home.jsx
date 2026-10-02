@@ -22,7 +22,7 @@ export default function Home() {
   }, [profile.class_name]);
 
   const materialPath = (unitId, material, difficulty) => {
-    const map = { words: 'words', word_test: 'word-test', dialogue: 'dialogue', dialogue_blank: 'dialogue-blank', reading: 'reading', reading_blank: 'reading-blank', exam: 'exam' };
+    const map = { words: 'words', word_test: 'word-test', dialogue: 'dialogue', dialogue_blank: 'dialogue-blank', reading: 'reading', reading_blank: 'reading-blank', reading_analysis: 'reading-analysis', exam: 'exam' };
     return `/unit/${unitId}/${map[material] || material}${difficulty ? `?difficulty=${difficulty}` : ''}`;
   };
 

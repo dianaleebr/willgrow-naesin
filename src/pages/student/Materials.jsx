@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
-import { getUnit, listWords, listDialogues, getReading, listBlanks, listExam, wordQuestions, blankQuestions, examQuestions, shuffle, DIFF_LABEL, DIFF_DESC, DIFF_ORDER, listWrongNotes, questionsFromWrongNotes, wordExtra, hasRelation, hasSenses } from '../../lib/api.js';
+import { getUnit, listWords, listDialogues, getReading, listBlanks, listExam, wordQuestions, blankQuestions, examQuestions, shuffle, DIFF_LABEL, DIFF_DESC, DIFF_ORDER, listWrongNotes, questionsFromWrongNotes, wordExtra, hasRelation, hasSenses, getAnalysis, markHomeworkDone } from '../../lib/api.js';
+import { useAuth } from '../../lib/auth.jsx';
 import { useAsync, Loading, ErrorBox, Empty, TtsButton, Toggle, gradeLabel } from '../../components/ui.jsx';
 import QuizRunner from '../../components/QuizRunner.jsx';
 
@@ -235,6 +236,129 @@ export function Exam() {
         {wrong.length > 0 && <button className="btn lg block" disabled={busy} onClick={retryWrong}>{busy ? '준비 중…' : `이 유닛에서 틀린 문제만 모아 풀기 (${wrong.length})`}</button>}
         {wrong.length > 0 && <div className="muted small">PRE-STEP·1회·2회 등 회차에 상관없이, 이 유닛 예상문제에서 틀렸고 아직 해결하지 못한 문제를 모두 모읍니다.</div>}
       </>)}
+    </div>
+  );
+}
+
+// ⑧ 본문분석 — 내용정리 플러스 Sentence Structures: 문장별 구문·문법 해설로 자기주도 복습
+export function ReadingAnalysis() {
+  const { unitId } = useParams();
+  const { profile } = useAuth();
+  const st = useAsync(async () => ({ unit: await getUnit(unitId), ana: await getAnalysis(unitId) }), [unitId]);
+  const [pi, setPi] = useState(0); const [showKo, setShowKo] = useState(true); const [openAll, setOpenAll] = useState(true); const [done, setDone] = useState(false);
+  if (st.loading) return <Loading />; if (st.error) return <ErrorBox error={st.error} />;
+  const { unit, ana } = st.data;
+  const paras = ana?.paragraphs || [];
+  if (!paras.length) return <div><Head unit={unit} title="본문분석" /><Empty>이 유닛의 본문분석 자료가 아직 없어요.</Empty></div>;
+  const p = paras[Math.min(pi, paras.length - 1)];
+  const finish = async () => { try { await markHomeworkDone(profile.id, profile.class_name, Number(unitId), 'reading_analysis'); } catch {} setDone(true); };
+  return (
+    <div className="stack">
+      <Head unit={unit} title="본문분석" />
+      <div className="muted small">선생님 설명을 들은 뒤 집에서 한 문장씩 복습해요. 문장 → 해석 → 문법·구문 포인트 순서로 읽고, 마지막에 T/F로 내용을 확인해요.</div>
+      <div className="row" style={{ flexWrap: 'wrap' }}>
+        {paras.map((x, i) => <button key={i} className={`btn sm ${i === pi ? 'primary' : ''}`} onClick={() => { setPi(i); window.scrollTo(0, 0); }}>본문{x.no}{x.title ? ` ${x.title}` : ''}</button>)}
+      </div>
+      <div className="row between" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <Toggle value={showKo} onChange={setShowKo} options={[{ value: true, label: '해석 보기' }, { value: false, label: '해석 가리기' }]} />
+        <Toggle value={openAll} onChange={setOpenAll} options={[{ value: true, label: '해설 펼치기' }, { value: false, label: '해설 접기' }]} />
+      </div>
+      {p.summary && (p.summary.text || p.summary.next?.length > 0) && (
+        <div className="card soft">
+          <div className="muted small" style={{ fontWeight: 700 }}>단락 요약{p.summary.title ? ` · ${p.summary.title}` : ''}</div>
+          {p.summary.text && <div style={{ marginTop: 4, lineHeight: 1.6 }}>{p.summary.text}</div>}
+          {p.summary.next?.length > 0 && <div className="small muted" style={{ marginTop: 6 }}>이어질 내용: {p.summary.next.filter((_, i) => i % 2 === 0).map((t, i) => <span key={i} className="en">{t}{i < Math.ceil(p.summary.next.length / 2) - 1 ? ' / ' : ''}</span>)}</div>}
+        </div>
+      )}
+      {p.sentences.map((s, i) => <SentenceCard key={i} s={s} showKo={showKo} open={openAll} />)}
+      {p.grammar?.length > 0 && (
+        <div className="stack">
+          <h3 style={{ margin: '8px 0 0' }}>Grammar+ 문법 정리</h3>
+          {p.grammar.map((g, i) => (
+            <details key={i} className="card" open={openAll}>
+              <summary style={{ cursor: 'pointer', fontWeight: 700 }}>{g.title}</summary>
+              <div className="stack" style={{ gap: 4, marginTop: 8 }}>
+                {g.lines.map((l, k) => <div key={k} className={`${/[A-Za-z]/.test(l) && !/[가-힣]/.test(l) ? 'en' : ''} small`} style={{ lineHeight: 1.6, paddingLeft: /^(→|\d+\.)/.test(l) ? 0 : 10 }}>{l}</div>)}
+              </div>
+            </details>
+          ))}
+        </div>
+      )}
+      {p.tf?.length > 0 && <TfCheck items={p.tf} />}
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <button className="btn" disabled={pi === 0} onClick={() => { setPi(pi - 1); window.scrollTo(0, 0); }}>‹ 이전 단락</button>
+        {pi + 1 < paras.length
+          ? <button className="btn primary" onClick={() => { setPi(pi + 1); window.scrollTo(0, 0); }}>다음 단락 ›</button>
+          : <button className="btn primary" disabled={done} onClick={finish}>{done ? '학습 완료 ✓' : '본문분석 학습 완료'}</button>}
+      </div>
+    </div>
+  );
+}
+function SentenceCard({ s, showKo, open }) {
+  const [ko, setKo] = useState(false);
+  const koShown = showKo || ko;
+  return (
+    <div className="card ana">
+      <div className="row" style={{ alignItems: 'flex-start', gap: 8 }}>
+        {s.no && <span className="badge">{s.no}</span>}
+        <div className="en" style={{ fontSize: 17, lineHeight: 1.6, fontWeight: 600, flex: 1, minWidth: 0 }}>{s.en}</div>
+        <TtsButton text={s.en} />
+      </div>
+      {s.ko && <div className="ko" style={{ marginTop: 4, color: koShown ? 'var(--text)' : 'transparent', cursor: 'pointer', userSelect: 'none' }} onClick={() => setKo(!ko)}>{koShown ? s.ko : '(눌러서 해석 보기)'}</div>}
+      {!koShown && <button className="btn sm ghost" onClick={() => setKo(true)}>해석 보기</button>}
+      {s.points.length > 0 && (
+        <details open={open} style={{ marginTop: 6 }}>
+          <summary className="small muted" style={{ cursor: 'pointer' }}>문법·구문 포인트 {s.points.length}개</summary>
+          <div className="stack" style={{ gap: 8, marginTop: 6 }}>
+            {s.points.map((pt, i) => <Point key={i} pt={pt} />)}
+          </div>
+        </details>
+      )}
+      {s.vocab?.length > 0 && (
+        <details style={{ marginTop: 6 }}>
+          <summary className="small muted" style={{ cursor: 'pointer' }}>어휘&숙어 {s.vocab.length}</summary>
+          <ul className="small" style={{ margin: '4px 0 0 18px', padding: 0 }}>{s.vocab.map((v, i) => <li key={i} style={{ whiteSpace: 'pre-wrap' }}>{v}</li>)}</ul>
+        </details>
+      )}
+    </div>
+  );
+}
+function Point({ pt }) {
+  const m = String(pt.text || '').match(/^❮(.*?)❯\s*(.*)$/s);
+  const struct = m ? m[1] : null; const body = m ? m[2] : pt.text;
+  return (
+    <div className="ana-point">
+      <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+        {pt.tag && <span className="chip tag">{pt.tag}</span>}
+        {pt.flags?.map((f, i) => <span key={i} className="badge yellow">{f}</span>)}
+      </div>
+      {struct && <div className="en small" style={{ fontWeight: 700, marginTop: 4 }}>{struct}</div>}
+      {body && <div className="small" style={{ lineHeight: 1.65, marginTop: 2 }}>{body}</div>}
+      {pt.notes?.map((n, i) => (
+        <div key={i} className="small" style={{ marginTop: 4, paddingLeft: 8, borderLeft: '3px solid var(--line)', color: n.kind === '전환' || n.kind === 'e.g.' ? 'var(--text)' : 'var(--muted)' }}>
+          <span className="badge" style={{ marginRight: 6 }}>{n.kind}</span><span className={/[A-Za-z]/.test(n.text) && !/^[가-힣]/.test(n.text) ? 'en' : ''}>{n.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+function TfCheck({ items }) {
+  const [ans, setAns] = useState({});
+  const right = items.filter((it, i) => ans[i] === it.a).length;
+  return (
+    <div className="card">
+      <div className="row between"><b>T/F 내용 확인</b><span className="muted small">{Object.keys(ans).length ? `${right} / ${items.length} 정답` : '본문 내용과 맞으면 T, 틀리면 F'}</span></div>
+      <div className="stack" style={{ gap: 8, marginTop: 8 }}>
+        {items.map((it, i) => (
+          <div key={i} className="row" style={{ alignItems: 'flex-start', gap: 8 }}>
+            <span className="muted small" style={{ width: 18 }}>{i + 1}.</span>
+            <div className="en" style={{ flex: 1, minWidth: 0, lineHeight: 1.5 }}>{it.q}</div>
+            <div className="row" style={{ gap: 4, flex: 'none' }}>
+              {['T', 'F'].map((v) => { let cls = 'btn sm'; if (ans[i] != null) { if (v === it.a) cls += ' green'; else if (ans[i] === v) cls += ' primary'; } return <button key={v} className={cls} onClick={() => setAns({ ...ans, [i]: v })}>{v}</button>; })}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

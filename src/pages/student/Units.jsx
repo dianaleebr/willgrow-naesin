@@ -42,7 +42,7 @@ export function UnitMenu() {
   if (st.loading) return <Loading />;
   if (st.error) return <ErrorBox error={st.error} />;
   const u = st.data;
-  const paths = { words: 'words', word_test: 'word-test', dialogue: 'dialogue', dialogue_blank: 'dialogue-blank', reading: 'reading', reading_blank: 'reading-blank', exam: 'exam' };
+  const paths = { words: 'words', word_test: 'word-test', dialogue: 'dialogue', dialogue_blank: 'dialogue-blank', reading: 'reading', reading_blank: 'reading-blank', reading_analysis: 'reading-analysis', exam: 'exam' };
   return (
     <div className="stack">
       <div><div className="muted small">{u.publishers?.name} · {gradeLabel(u)}</div><h1>{u.unit_no >= 90 ? '' : `Lesson ${u.unit_no} `}{u.title}</h1></div>

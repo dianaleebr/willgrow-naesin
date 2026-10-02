@@ -5,6 +5,7 @@ import json, re, os, sys, glob
 from collections import defaultdict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dialogue_blanks
+import parse_analysis
 
 TXT = sys.argv[1] if len(sys.argv) > 1 else '/home/claude/txt'
 OUT = sys.argv[2] if len(sys.argv) > 2 else '/home/claude/willgrow-naesin/content'
@@ -451,6 +452,7 @@ for (pub, grade, unit), files in sorted(units.items()):
     out = {'publisher': pub, 'level': level, 'grade': 1 if grade >= 10 else grade, 'unit': unit, 'unit_title': None, 'words': [], 'dialogues': [], 'reading': None, 'blanks': [], 'exam_questions': []}   # 공통영어1·2 = 고1 과정
     if 'naesin' in files:
         fl = load(files['naesin']); out['unit_title'] = unit_title(fl); out['dialogues'] = parse_dialogues(fl)
+        out['analysis'] = parse_analysis.parse(fl)   # 본문분석 (문장별 구문·문법 해설)
         out['_naesin_flat'] = fl   # 대화문 빈칸은 ko_fill·대화 제거 후처리 뒤에 생성
     if files.get('_hint'): out['unit_title'] = (out['unit_title'] or '') and f"{files['_hint']} · {out['unit_title']}" or files['_hint']
     if 'words' in files: out['words'] = parse_words(load(files['words']))

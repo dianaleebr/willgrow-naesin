@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { listWrongNotes, questionsFromWrongNotes, ITEM_TYPE_LABEL, DIFF_LABEL } from '../../lib/api.js';
+import { listWrongNotes, questionsFromWrongNotes, ITEM_TYPE_LABEL, DIFF_LABEL, WORD_MODE_LABEL } from '../../lib/api.js';
 import { supabase } from '../../lib/supabase.js';
 import { useAsync, Loading, ErrorBox, Empty, unitLabel, RichText } from '../../components/ui.jsx';
 import QuizRunner, { PassageKo } from '../../components/QuizRunner.jsx';
@@ -51,7 +51,7 @@ export default function WrongNotes() {
         {sel.map((n) => (
           <div key={n.id} className="item">
             <div className="grow">
-              <div className="row"><span className="badge">{ITEM_TYPE_LABEL[n.item_type]}{n.item_type === 'reading_blank' && n.sub_mode ? ` · ${DIFF_LABEL[n.sub_mode] || n.sub_mode}` : ''}{n.item_type === 'word' && n.sub_mode ? ` · ${n.sub_mode === 'ko2en' ? '한→영' : '영→한'}` : ''}</span><span className="muted small">{n.units ? `중${n.units.grade} L${n.units.unit_no}` : ''}</span></div>
+              <div className="row"><span className="badge">{ITEM_TYPE_LABEL[n.item_type]}{n.item_type === 'reading_blank' && n.sub_mode ? ` · ${DIFF_LABEL[n.sub_mode] || n.sub_mode}` : ''}{n.item_type === 'word' && n.sub_mode ? ` · ${WORD_MODE_LABEL[n.sub_mode] || n.sub_mode}` : ''}</span><span className="muted small">{n.units ? `중${n.units.grade} L${n.units.unit_no}` : ''}</span></div>
               <NoteText n={n} />
               {n.memo && <div className="small" style={{ marginTop: 4, color: '#8a6a00' }}>📝 {n.memo}</div>}
             </div>

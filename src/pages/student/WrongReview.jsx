@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase, rpc } from '../../lib/supabase.js';
-import { ITEM_TYPE_LABEL, DIFF_LABEL } from '../../lib/api.js';
+import { ITEM_TYPE_LABEL, DIFF_LABEL, WORD_MODE_LABEL, wordExtra } from '../../lib/api.js';
 import { useAsync, Loading, ErrorBox, RichText } from '../../components/ui.jsx';
 
 /**
@@ -38,7 +38,7 @@ async function loadAll(notes) {
   const byType = (t) => notes.filter((x) => x.item_type === t);
   const ids = (t) => byType(t).map((x) => x.item_id);
   const [words, blanks, exams, attempts] = await Promise.all([
-    ids('word').length ? supabase.from('words').select('id, en, ko, pos, example').in('id', ids('word')).then(unwrap) : [],
+    ids('word').length ? supabase.from('words').select('id, en, ko, pos, example, extra').in('id', ids('word')).then(unwrap) : [],
     [...ids('dialogue_blank'), ...ids('reading_blank')].length ? supabase.from('blank_items').select('id, source, prompt, answers, ko, explanation, difficulty').in('id', [...ids('dialogue_blank'), ...ids('reading_blank')]).then(unwrap) : [],
     ids('exam').length ? supabase.from('exam_questions').select('id, question, choices, answer, explanation, qtype, passage_ko, school, year, term').in('id', ids('exam')).then(unwrap) : [],
     supabase.from('attempts').select('item_type, item_id, sub_mode, student_answer, created_at').eq('is_correct', false).in('item_id', notes.map((x) => x.item_id)).order('created_at', { ascending: false }).limit(2000).then(unwrap),
@@ -60,7 +60,7 @@ const unwrap = ({ data, error }) => { if (error) throw new Error(error.message);
 function ReviewCard({ it }) {
   const { note } = it;
   const u = note.units;
-  const label = `${ITEM_TYPE_LABEL[note.item_type]}${note.item_type === 'reading_blank' && note.sub_mode ? ` · ${DIFF_LABEL[note.sub_mode] || note.sub_mode}` : ''}${note.item_type === 'word' && note.sub_mode ? ` · ${note.sub_mode === 'ko2en' ? '한→영' : '영→한'}` : ''}`;
+  const label = `${ITEM_TYPE_LABEL[note.item_type]}${note.item_type === 'reading_blank' && note.sub_mode ? ` · ${DIFF_LABEL[note.sub_mode] || note.sub_mode}` : ''}${note.item_type === 'word' && note.sub_mode ? ` · ${WORD_MODE_LABEL[note.sub_mode] || note.sub_mode}` : ''}`;
   return (
     <div className="stack">
       <div className="row"><span className="badge">{label}</span>{u && <span className="muted small">중{u.grade} L{u.unit_no}{u.title ? ` ${u.title}` : ''}</span>}<span className="red small" style={{ marginLeft: 'auto' }}>{note.wrong_count}회 틀림</span></div>
@@ -144,16 +144,22 @@ function BlankBody({ it }) {
 
 function WordBody({ it }) {
   const { w, myAnswer, note } = it;
-  const ko2en = note.sub_mode === 'ko2en';
+  const m = note.sub_mode || 'ko2en'; const x = wordExtra(w);
+  const rel = m === 'syn' ? x.syn : m === 'ant' ? x.ant : null;
+  const relLabel = m === 'syn' ? '유의어' : '반의어';
+  const answer = m === 'ko2en' ? w.en : m === 'en2ko' ? w.ko : rel ? rel.map((r) => r.en + (r.ko ? ` (${r.ko})` : '')).join(' / ') : x.senses.map((sn) => sn.ko).join(' / ');
   return (
     <>
-      <div className="card soft" style={{ fontSize: 20, fontWeight: 700 }}>{ko2en ? w.ko : <span className="en">{w.en}</span>}{w.pos && <span className="muted small" style={{ marginLeft: 8, fontWeight: 400 }}>{w.pos}</span>}</div>
+      <div className="card soft" style={{ fontSize: 20, fontWeight: 700 }}>{m === 'ko2en' ? w.ko : <span className="en">{w.en}</span>}{w.pos && <span className="muted small" style={{ marginLeft: 8, fontWeight: 400 }}>{w.pos}</span>}{rel && <span className="muted small" style={{ marginLeft: 8, fontWeight: 400 }}>{(rel[0]?.sense || w.ko)} 의 {relLabel}</span>}{m === 'sense' && <span className="muted small" style={{ marginLeft: 8, fontWeight: 400 }}>다의어</span>}</div>
       <Section title="내가 쓴 답 → 정답" color="var(--red)">
-        <div>{myAnswer ? <span className="red en" style={{ textDecoration: 'line-through' }}>{myAnswer}</span> : <span className="muted">(기록 없음)</span>} <span className="muted">→</span> <b className="green en">{ko2en ? w.en : w.ko}</b></div>
+        <div>{myAnswer ? <span className="red en" style={{ textDecoration: 'line-through' }}>{myAnswer}</span> : <span className="muted">(기록 없음)</span>} <span className="muted">→</span> <b className="green en">{answer}</b></div>
       </Section>
       <Section title="단어 정리" color="var(--green)">
-        <div><b className="en">{w.en}</b> — {w.ko}</div>
+        <div><b className="en">{w.en}</b> {w.pos && <span className="muted small">{w.pos}</span>} — {w.ko}</div>
         {w.example && <div className="en small muted" style={{ marginTop: 4 }}>{w.example}</div>}
+        {x.syn.length > 0 && <div className="small" style={{ marginTop: 4 }}>유의어: <b className="en">{x.syn.map((r) => r.en).join(', ')}</b></div>}
+        {x.ant.length > 0 && <div className="small">반의어: <b className="en">{x.ant.map((r) => r.en + (r.ko ? ` ${r.ko}` : '')).join(', ')}</b></div>}
+        {x.senses.length >= 2 && <ol className="senses">{x.senses.map((sn, i) => <li key={i}><span className="muted small">{sn.pos}</span> <b>{sn.ko}</b>{sn.ex_en && <div className="small muted"><span className="en">{sn.ex_en}</span> {sn.ex_ko}</div>}</li>)}</ol>}
       </Section>
     </>
   );

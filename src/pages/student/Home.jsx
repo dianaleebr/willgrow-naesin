@@ -36,7 +36,7 @@ export default function Home() {
     <div className="stack">
       <div>
         <h1>{profile.name}</h1>
-        <div className="muted">{profile.school} {profile.grade}학년 · {profile.class_name} · {profile.publisher_name || '출판사 미지정'}</div>
+        <div className="muted">{profile.school} {profile.grade ? `${profile.level || '중'}${profile.grade}` : ''} · {profile.class_name} · {profile.publisher_name || '출판사 미지정'}</div>
       </div>
 
       {live && (

@@ -91,11 +91,12 @@ export function Dialogue() {
 // ④ 대화문 빈칸
 export function DialogueBlank() {
   const { unitId } = useParams(); const mode = useMode();
-  const st = useAsync(async () => ({ unit: await getUnit(unitId), items: await listBlanks(unitId, 'dialogue') }), [unitId]);
-  const [qs, setQs] = useState(null);
+  const st = useAsync(async () => ({ unit: await getUnit(unitId), items: await listBlanks(unitId, 'dialogue'), wrong: await listWrongNotes('open', { itemType: 'dialogue_blank', unitId: Number(unitId) }) }), [unitId]);
+  const [qs, setQs] = useState(null); const [retry, setRetry] = useState(false); const [busy, setBusy] = useState(false);
   if (st.loading) return <Loading />; if (st.error) return <ErrorBox error={st.error} />;
-  const { unit, items } = st.data;
-  if (qs) return <QuizRunner questions={qs} mode={mode} title="대화문 빈칸" homework={{ unitId: Number(unitId), material: 'dialogue_blank' }} onExit={() => setQs(null)} />;
+  const { unit, items, wrong } = st.data;
+  const retryWrong = async () => { setBusy(true); try { const list = await questionsFromWrongNotes(wrong); setRetry(true); setQs(list); } finally { setBusy(false); } };
+  if (qs) return <QuizRunner questions={qs} mode={retry ? 'retry' : mode} title={retry ? `대화문 빈칸 오답 다시 풀기 (${qs.length})` : '대화문 빈칸'} homework={retry ? undefined : { unitId: Number(unitId), material: 'dialogue_blank' }} onExit={() => { setQs(null); setRetry(false); st.reload(); }} />;
   return (
     <div className="stack">
       <Head unit={unit} title="대화문 빈칸" />
@@ -103,6 +104,7 @@ export function DialogueBlank() {
         <div className="card"><b>{items.length}문항</b><div className="muted small">대화문의 핵심 표현을 직접 입력해요. 해석이 힌트로 나와요.</div></div>
         <button className="btn primary lg block" onClick={() => setQs(blankQuestions(items, Number(unitId), 'dialogue'))}>순서대로 풀기</button>
         <button className="btn lg block" onClick={() => setQs(blankQuestions(shuffle(items), Number(unitId), 'dialogue'))}>랜덤으로 풀기</button>
+        {wrong.length > 0 && <button className="btn lg block" disabled={busy} onClick={retryWrong}>{busy ? '준비 중…' : `이 유닛에서 틀린 문제만 모아 풀기 (${wrong.length})`}</button>}
       </>)}
     </div>
   );
@@ -135,14 +137,16 @@ export function Reading() {
 export function ReadingBlank() {
   const { unitId } = useParams(); const [sp] = useSearchParams(); const mode = useMode();
   const [diffSel, setDiff] = useState(sp.get('difficulty') || null);
-  const st = useAsync(async () => ({ unit: await getUnit(unitId), items: await listBlanks(unitId, 'reading') }), [unitId]);
-  const [qs, setQs] = useState(null);
+  const st = useAsync(async () => ({ unit: await getUnit(unitId), items: await listBlanks(unitId, 'reading'), wrong: await listWrongNotes('open', { itemType: 'reading_blank', unitId: Number(unitId) }) }), [unitId]);
+  const [qs, setQs] = useState(null); const [retry, setRetry] = useState(false); const [busy, setBusy] = useState(false);
   if (st.loading) return <Loading />; if (st.error) return <ErrorBox error={st.error} />;
-  const { unit, items } = st.data;
+  const { unit, items, wrong } = st.data;
   const avail = DIFF_ORDER.filter((k) => items.some((b) => b.difficulty === k));
   const diff = diffSel && avail.includes(diffSel) ? diffSel : avail[0];
   const mine = items.filter((b) => b.difficulty === diff);
-  if (qs) return <QuizRunner questions={qs} mode={mode} title={`본문 빈칸 · ${DIFF_LABEL[diff]}`} homework={{ unitId: Number(unitId), material: 'reading_blank', difficulty: diff }} onExit={() => setQs(null)} />;
+  const wrongHere = wrong.filter((n) => n.sub_mode === diff);
+  const retryWrong = async (list) => { setBusy(true); try { const q = await questionsFromWrongNotes(list); setRetry(true); setQs(q); } finally { setBusy(false); } };
+  if (qs) return <QuizRunner questions={qs} mode={retry ? 'retry' : mode} title={retry ? `본문 빈칸 오답 다시 풀기 (${qs.length})` : `본문 빈칸 · ${DIFF_LABEL[diff]}`} homework={retry ? undefined : { unitId: Number(unitId), material: 'reading_blank', difficulty: diff }} onExit={() => { setQs(null); setRetry(false); st.reload(); }} />;
   return (
     <div className="stack">
       <Head unit={unit} title="본문 빈칸시험" />
@@ -153,6 +157,8 @@ export function ReadingBlank() {
       {mine.length === 0 ? <Empty>이 난이도의 문항이 아직 없어요.</Empty> : (<>
         <button className="btn primary lg block" onClick={() => setQs(blankQuestions(mine, Number(unitId), 'reading'))}>순서대로 풀기</button>
         <button className="btn lg block" onClick={() => setQs(blankQuestions(shuffle(mine), Number(unitId), 'reading'))}>랜덤으로 풀기</button>
+        {wrongHere.length > 0 && <button className="btn lg block" disabled={busy} onClick={() => retryWrong(wrongHere)}>{busy ? '준비 중…' : `${DIFF_LABEL[diff]}에서 틀린 문제만 모아 풀기 (${wrongHere.length})`}</button>}
+        {wrong.length > wrongHere.length && <button className="btn sm block" disabled={busy} onClick={() => retryWrong(wrong)}>이 유닛 본문 빈칸 오답 전체 다시 풀기 ({wrong.length})</button>}
       </>)}
     </div>
   );

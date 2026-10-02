@@ -101,31 +101,29 @@ function HomeworkStatus() {
 }
 
 export function WrongTop() {
-  const [cls, setCls] = useState(''); const [school, setSchool] = useState('');
-  const meta = useAsync(() => supabase.from('profiles').select('class_name, school').eq('role', 'student').then(unwrap), []);
-  const st = useAsync(() => rpc('top_wrong_items', { p_class_name: cls || null, p_school: school || null, p_limit: 10 }), [cls, school]);
+  const [cls, setCls] = useState('');
   const [studentId, setStudentId] = useState('');
-  const students = useAsync(() => supabase.from('profiles').select('id, name, class_name, school').eq('role', 'student').order('class_name').order('name').then(unwrap), []);
-  const notes = useAsync(async () => (studentId ? supabase.from('wrong_notes').select('*, units(unit_no, grade)').eq('student_id', studentId).order('status').order('wrong_count', { ascending: false }).then(unwrap) : []), [studentId]);
-  const classes = [...new Set((meta.data || []).map((x) => x.class_name).filter(Boolean))]; const schools = [...new Set((meta.data || []).map((x) => x.school).filter(Boolean))];
+  const students = useAsync(() => supabase.from('profiles').select('id, name, class_name, school, level, grade').eq('role', 'student').order('class_name').order('name').then(unwrap), []);
+  const notes = useAsync(async () => (studentId ? supabase.from('wrong_notes').select('*, units(unit_no, grade, publishers(level))').eq('student_id', studentId).order('status').order('wrong_count', { ascending: false }).then(unwrap) : []), [studentId]);
+  const all = students.data || [];
+  const classes = [...new Set(all.map((x) => x.class_name).filter(Boolean))];
+  const list = cls ? all.filter((s) => s.class_name === cls) : all;
+  const open = (notes.data || []).filter((n) => n.status === 'open').length;
   return (
     <div className="stack">
       <h1>오답 분석</h1>
       <div className="card row">
-        <div><label className="field">학교</label><select className="input" value={school} onChange={(e) => setSchool(e.target.value)}><option value="">전체</option>{schools.map((s) => <option key={s}>{s}</option>)}</select></div>
-        <div><label className="field">반</label><select className="input" value={cls} onChange={(e) => setCls(e.target.value)}><option value="">전체</option>{classes.map((s) => <option key={s}>{s}</option>)}</select></div>
+        <div><label className="field">반</label><select className="input" value={cls} onChange={(e) => { setCls(e.target.value); setStudentId(''); }}><option value="">전체</option>{classes.map((s) => <option key={s}>{s}</option>)}</select></div>
+        <div className="grow"><label className="field">학생</label><select className="input" value={studentId} onChange={(e) => setStudentId(e.target.value)}><option value="">학생 선택…</option>{list.map((s) => <option key={s.id} value={s.id}>{s.class_name ? s.class_name + ' · ' : ''}{s.name} ({s.school || '-'}{s.grade ? ` ${s.level || '중'}${s.grade}` : ''})</option>)}</select></div>
       </div>
-      <h2>많이 틀린 문항 TOP 10</h2>
-      {st.loading ? <Loading /> : st.error ? <ErrorBox error={st.error} /> : st.data.length === 0 ? <Empty>아직 오답 기록이 없어요.</Empty> : (
-        <div className="tbl-wrap"><table className="tbl"><thead><tr><th>#</th><th>유형</th><th>유닛</th><th>문항</th><th>정답</th><th>틀린 학생</th><th>총 오답</th></tr></thead>
-          <tbody>{st.data.map((r, i) => <tr key={i}><td>{i + 1}</td><td><span className="badge">{ITEM_TYPE_LABEL[r.item_type]}{r.sub_mode && r.item_type === 'reading_blank' ? ` ${DIFF_LABEL[r.sub_mode] || r.sub_mode}` : ''}</span></td><td className="small">{r.unit_label}</td><td className="wrap en">{r.prompt}</td><td className="wrap en small">{r.answer}</td><td className="center">{r.student_count}명</td><td className="center red"><b>{r.wrong_total}</b></td></tr>)}</tbody></table></div>
-      )}
-      <h2>학생별 오답노트</h2>
-      <select className="input" value={studentId} onChange={(e) => setStudentId(e.target.value)}><option value="">학생 선택…</option>{(students.data || []).map((s) => <option key={s.id} value={s.id}>{s.class_name} · {s.name} ({s.school})</option>)}</select>
+      {!studentId && <Empty>학생을 선택하면 오답노트(남은 오답·해결된 오답·학생 메모)를 볼 수 있어요.</Empty>}
       {studentId && (notes.loading ? <Loading /> : (
-        <div className="tbl-wrap"><table className="tbl"><thead><tr><th>상태</th><th>유형</th><th>유닛</th><th>문항</th><th>오답 횟수</th><th>연속 정답</th></tr></thead>
-          <tbody>{(notes.data || []).map((n) => <tr key={n.id}><td><span className={`badge ${n.status === 'open' ? 'red' : 'green'}`}>{n.status === 'open' ? '남음' : '해결'}</span></td><td>{ITEM_TYPE_LABEL[n.item_type]}</td><td>{n.units ? `중${n.units.grade} L${n.units.unit_no}` : ''}</td><td className="wrap"><NoteText n={n} /></td><td className="center">{n.wrong_count}</td><td className="center">{n.correct_streak}</td></tr>)}
-            {(notes.data || []).length === 0 && <tr><td colSpan={6} className="center muted">오답 없음</td></tr>}</tbody></table></div>
+        <>
+          <div className="muted small">남은 오답 <b className="red">{open}</b>개 · 해결 {(notes.data || []).length - open}개</div>
+          <div className="tbl-wrap"><table className="tbl"><thead><tr><th>상태</th><th>유형</th><th>유닛</th><th>문항</th><th>학생 메모</th><th>오답 횟수</th><th>연속 정답</th></tr></thead>
+            <tbody>{(notes.data || []).map((n) => <tr key={n.id}><td><span className={`badge ${n.status === 'open' ? 'red' : 'green'}`}>{n.status === 'open' ? '남음' : '해결'}</span></td><td>{ITEM_TYPE_LABEL[n.item_type]}{n.sub_mode && n.item_type === 'reading_blank' ? ` · ${DIFF_LABEL[n.sub_mode] || n.sub_mode}` : ''}</td><td>{n.units ? `${n.units.publishers?.level || '중'}${n.units.grade} L${n.units.unit_no}` : ''}</td><td className="wrap"><NoteText n={n} /></td><td className="wrap small" style={{ color: '#8a6a00' }}>{n.memo || ''}</td><td className="center">{n.wrong_count}</td><td className="center">{n.correct_streak}</td></tr>)}
+              {(notes.data || []).length === 0 && <tr><td colSpan={7} className="center muted">오답 없음</td></tr>}</tbody></table></div>
+        </>
       ))}
     </div>
   );

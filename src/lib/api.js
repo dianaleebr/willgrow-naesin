@@ -8,6 +8,7 @@ export const MATERIALS = [
   { key: 'dialogue_blank', label: '대화문 빈칸', desc: '핵심 표현 채우기' },
   { key: 'reading', label: '본문', desc: '문장별 해석 + 듣기' },
   { key: 'reading_blank', label: '본문 빈칸시험', desc: '우리말·영문·동사형·어법' },
+  { key: 'reading_analysis', label: '본문분석', desc: '문장별 문법·구문 해설로 복습' },
   { key: 'exam', label: '기출문제', desc: '객관식 + 서술형' },
 ];
 export const materialLabel = (k) => MATERIALS.find((m) => m.key === k)?.label || k;
@@ -39,6 +40,7 @@ export const listBlanks = (unitId, source, difficulty) => {
   if (difficulty) q = q.eq('difficulty', difficulty);
   return q.then(unwrap);
 };
+export const getAnalysis = (unitId) => supabase.from('reading_analysis').select('data').eq('unit_id', unitId).maybeSingle().then(({ data, error }) => { if (error) throw new Error(error.message); return data?.data || null; });
 export const listExam = (unitId) => supabase.from('exam_questions').select('*').eq('unit_id', unitId).order('year').order('sort_order').order('id').then(unwrap);
 
 // ---------- 기록 ----------

@@ -88,7 +88,83 @@ def parse_words(flat):
         k = (w['en'].lower(), w['ko'])
         if k in seen: continue
         seen.add(k); out.append(w)
+    add_relations(flat, out)
     return out
+
+# ---------- 다의어 & 유의어/반의어 ----------
+SENSE_RE = re.compile(r'^\d+\.\s*(?:(n|v|a|adj|adv|prep|conj|pron|int|interj|aux|det)\.\s*)?(.+)$', re.I)
+def _split_enko(t):
+    """'English sentence. 한국어 해석' → (en, ko)"""
+    m = HANGUL.search(t)
+    if not m: return t.strip(), None
+    return t[:m.start()].strip(), t[m.start():].strip()
+
+def _parse_group(seg):
+    """'decrease, fall, decline' / 'common 흔한' / 'carry, take 휴대하다' → [{en, ko}]"""
+    m = HANGUL.search(seg)
+    en_part, ko = (seg[:m.start()], seg[m.start():].strip()) if m else (seg, None)
+    if en_part.rstrip().endswith('~') and ko: ko = '~' + ko   # 'finish ~을 끝내다' → ko '~을 끝내다'
+    ens = [x.strip(' ~') for x in en_part.split(',') if x.strip(' ~')]
+    return [{'en': e, 'ko': ko} for e in ens]
+
+def add_relations(flat, words):
+    """WORD TEST 의 '다의어&유의어/반의어' 절을 읽어 words 항목에 extra = {senses, syn, ant} 를 붙임.
+    어휘 목록에 없는 단어는 새 항목으로 추가."""
+    lines = [t for l, t in flat]
+    s = next((i for i, t in enumerate(lines) if '다의어&유의어' in t or re.match(r'\s*1│다의어', t)), None)
+    if s is None: return
+    e = next((i for i, t in enumerate(lines) if i > s and re.match(r'\s*TEST\s*1', t)), len(lines))
+    s2 = next((i for i, t in enumerate(lines) if i > s and '유의어/반의어' in t and '│' in t), e)
+    idx = {w['en'].lower().replace('’', "'"): w for w in words}
+    def get(en, ko=None, pos=None):
+        k = en.lower().replace('’', "'")
+        if k not in idx:
+            w = {'en': en, 'ko': ko or '', 'pos': pos, 'example': None, 'category': '다의어·유의어', 'note': None}
+            words.append(w); idx[k] = w
+        w = idx[k]
+        w.setdefault('extra', {'senses': [], 'syn': [], 'ant': []})
+        return w
+    # 1) 다의어: 'word\t\t1. n. 뜻\n\n2. v. 뜻\n' 다음에 뜻 순서대로 예문 레코드
+    i = s
+    while i < s2:
+        l, t = flat[i]
+        if l == 3 and '\t' in t and SENSE_RE.match(t.split('\t', 1)[1].strip().split('\n')[0]):
+            en, rest = t.split('\t', 1); en = en.strip()
+            senses = []
+            for p in rest.replace('\t', ' ').split('\n'):
+                p = p.strip()
+                m = SENSE_RE.match(p)
+                if m: senses.append({'pos': (m.group(1).lower() + '.') if m.group(1) else None, 'ko': m.group(2).strip(), 'ex_en': None, 'ex_ko': None})
+            j = i + 1; k = 0
+            while j < s2 and flat[j][0] == 3 and '\t' not in flat[j][1] and LATIN.search(flat[j][1]):
+                if k < len(senses): senses[k]['ex_en'], senses[k]['ex_ko'] = _split_enko(flat[j][1].strip())
+                k += 1; j += 1
+            if len(senses) >= 2:
+                w = get(en, ' / '.join(x['ko'] for x in senses), ', '.join(dict.fromkeys(x['pos'] for x in senses if x['pos'])) or None)
+                w['extra']['senses'] = senses
+            i = j
+        else: i += 1
+    # 2) 유의어/반의어: 'word \t품사. 뜻  유의어들  반의어들 뜻' + 뒤따르는 level6 라벨(유의어/반의어) 순서
+    i = s2 + 1
+    while i < e:
+        l, t = flat[i]
+        if l == 3 and '\t' in t:
+            labels = []; j = i + 1
+            while j < e and flat[j][0] == 6: labels.append(flat[j][1].strip()); j += 1
+            en, rest = t.split('\t', 1); en = en.strip(); rest = rest.replace('\t', ' ').strip()
+            segs = [x.strip() for x in re.split(r'\s{2,}', rest) if x.strip() and (HANGUL.search(x) or LATIN.search(x))]
+            if segs and labels and len(segs) - 1 == len(labels):
+                sense = segs[0]
+                pm = POS_RE.match(sense); pos = (pm.group(1).lower() + '.') if pm else None
+                ko = sense[pm.end():].strip() if pm else sense
+                w = get(en, ko, pos)
+                for lab, seg in zip(labels, segs[1:]):
+                    key = 'syn' if '유의어' in lab else 'ant'
+                    for g in _parse_group(seg):
+                        g['sense'] = ko
+                        if not any(x['en'].lower() == g['en'].lower() for x in w['extra'][key]): w['extra'][key].append(g)
+            i = j
+        else: i += 1
 
 # ---------- 본문 (워크북 2 = 영문 + 우리말빈칸, 워크북 3 = 우리말 + 영문빈칸) ----------
 def split_qa(t):

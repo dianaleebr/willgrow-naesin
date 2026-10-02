@@ -6,7 +6,7 @@ import Login from './pages/Login.jsx';
 import Password from './pages/Password.jsx';
 import Home from './pages/student/Home.jsx';
 import { UnitList, UnitMenu } from './pages/student/Units.jsx';
-import { Words, WordTest, Dialogue, DialogueBlank, Reading, ReadingBlank, Exam } from './pages/student/Materials.jsx';
+import { Words, WordTest, Dialogue, DialogueBlank, Reading, ReadingBlank, Exam, ReadingAnalysis } from './pages/student/Materials.jsx';
 import WrongNotes from './pages/student/WrongNotes.jsx';
 import Dashboard, { WrongTop } from './pages/teacher/Dashboard.jsx';
 import Students from './pages/teacher/Students.jsx';
@@ -34,6 +34,7 @@ function StudentShell() {
           <Route path="/unit/:unitId/dialogue-blank" element={<DialogueBlank />} />
           <Route path="/unit/:unitId/reading" element={<Reading />} />
           <Route path="/unit/:unitId/reading-blank" element={<ReadingBlank />} />
+          <Route path="/unit/:unitId/reading-analysis" element={<ReadingAnalysis />} />
           <Route path="/unit/:unitId/exam" element={<Exam />} />
           <Route path="/wrong" element={<WrongNotes />} />
           <Route path="*" element={<Navigate to="/" replace />} />
@@ -68,6 +69,7 @@ function TeacherShell() {
           <Route path="/unit/:unitId/dialogue-blank" element={<DialogueBlank />} />
           <Route path="/unit/:unitId/reading" element={<Reading />} />
           <Route path="/unit/:unitId/reading-blank" element={<ReadingBlank />} />
+          <Route path="/unit/:unitId/reading-analysis" element={<ReadingAnalysis />} />
           <Route path="/unit/:unitId/exam" element={<Exam />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

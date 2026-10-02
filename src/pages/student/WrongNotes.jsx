@@ -3,6 +3,7 @@ import { listWrongNotes, questionsFromWrongNotes, ITEM_TYPE_LABEL, DIFF_LABEL } 
 import { supabase } from '../../lib/supabase.js';
 import { useAsync, Loading, ErrorBox, Empty, unitLabel, RichText } from '../../components/ui.jsx';
 import QuizRunner, { PassageKo } from '../../components/QuizRunner.jsx';
+import WrongReview from './WrongReview.jsx';
 
 export default function WrongNotes() {
   const [status, setStatus] = useState('open');
@@ -10,9 +11,11 @@ export default function WrongNotes() {
   const [unit, setUnit] = useState('');
   const [sort, setSort] = useState('count');
   const [run, setRun] = useState(null);
+  const [review, setReview] = useState(null);
   const [busy, setBusy] = useState(false);
   const st = useAsync(() => listWrongNotes(status), [status]);
 
+  if (review) return <WrongReview notes={review} onExit={() => { setReview(null); st.reload(); }} />;
   if (run) return <QuizRunner questions={run.qs} mode="retry" title={`오답 다시 풀기 (${run.qs.length})`} onExit={() => { setRun(null); st.reload(); }} />;
   if (st.loading) return <Loading />; if (st.error) return <ErrorBox error={st.error} />;
   const notes = st.data;
@@ -32,7 +35,12 @@ export default function WrongNotes() {
         <div><label className="field">유닛</label><select className="input" value={unit} onChange={(e) => setUnit(e.target.value)}><option value="">전체</option>{units.map(([id, u]) => <option key={id} value={id}>중{u.grade} L{u.unit_no}</option>)}</select></div>
         <div><label className="field">정렬</label><select className="input" value={sort} onChange={(e) => setSort(e.target.value)}><option value="count">많이 틀린 순</option><option value="recent">최근 순</option></select></div>
       </div>
-      {status === 'open' && sel.length > 0 && <button className="btn primary lg block" disabled={busy} onClick={() => retry(sel)}>{busy ? '준비 중…' : `오답만 다시 풀기 (${sel.length})`}</button>}
+      {sel.length > 0 && (
+        <div className="row">
+          {status === 'open' && <button className="btn primary lg grow" disabled={busy} onClick={() => retry(sel)}>{busy ? '준비 중…' : `오답만 다시 풀기 (${sel.length})`}</button>}
+          <button className="btn lg grow" onClick={() => setReview(sel)}>틀린 이유 보기 ({sel.length})</button>
+        </div>
+      )}
       {status === 'open' && !type && notes.length > 0 && (
         <div className="row">
           {Object.entries(ITEM_TYPE_LABEL).map(([k, v]) => { const n = notes.filter((x) => x.item_type === k && (!unit || String(x.unit_id) === unit)); return n.length ? <button key={k} className="btn sm" disabled={busy} onClick={() => retry(n)}>{v} 오답만 ({n.length})</button> : null; })}
@@ -45,8 +53,10 @@ export default function WrongNotes() {
             <div className="grow">
               <div className="row"><span className="badge">{ITEM_TYPE_LABEL[n.item_type]}{n.item_type === 'reading_blank' && n.sub_mode ? ` · ${DIFF_LABEL[n.sub_mode] || n.sub_mode}` : ''}{n.item_type === 'word' && n.sub_mode ? ` · ${n.sub_mode === 'ko2en' ? '한→영' : '영→한'}` : ''}</span><span className="muted small">{n.units ? `중${n.units.grade} L${n.units.unit_no}` : ''}</span></div>
               <NoteText n={n} />
+              {n.memo && <div className="small" style={{ marginTop: 4, color: '#8a6a00' }}>📝 {n.memo}</div>}
             </div>
             <div className="center"><b className="red en">{n.wrong_count}</b><div className="muted" style={{ fontSize: 11 }}>회 틀림</div></div>
+            <button className="btn sm ghost" onClick={() => setReview([n])}>이유</button>
             {status === 'open' && <button className="btn sm" onClick={() => retry([n])}>풀기</button>}
             <button className="btn ghost sm" onClick={() => remove(n)}>삭제</button>
           </div>

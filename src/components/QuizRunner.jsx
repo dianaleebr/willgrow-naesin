@@ -34,7 +34,7 @@ export default function QuizRunner({ questions: initialQuestions, mode = 'homewo
   const [text, setText] = useState('');
   const [blanks, setBlanks] = useState([]);
   const [choice, setChoice] = useState(null);
-  const [lastCorrect, setLastCorrect] = useState(null);
+  const [lastCorrect, setLastCorrect] = useState(null); const [near, setNear] = useState(null);
   const inputRef = useRef(null);
   const q = questions[idx];
 
@@ -84,6 +84,7 @@ export default function QuizRunner({ questions: initialQuestions, mode = 'homewo
     if (q.kind === 'choice') { if (choice == null) return; ans = choice; ok = q.grade(choice); }
     else if (q.kind === 'blanks') { if (blanks.every((b) => !b.trim())) return; ans = blanks.join(' | '); ok = q.grade(blanks); }
     else { if (!text.trim()) return; ans = text; ok = q.grade(text); }
+    setNear(ok && q.match ? (() => { const m = q.match(text); return m.ok && !m.exact ? m.matched : null; })() : null);
     setLastCorrect(ok); setPhase('feedback');
     setResults((r) => [...r, { q, correct: ok, answer: ans }]);
     recordAttempt(q, ok, ans, mode).catch((e) => console.warn('record fail', e));
@@ -131,8 +132,9 @@ export default function QuizRunner({ questions: initialQuestions, mode = 'homewo
 
       {phase === 'feedback' && (
         <div className={`feedback ${lastCorrect ? 'ok' : 'no'}`}>
-          <b>{lastCorrect ? '정답' : '오답'}</b>
-          {!lastCorrect && <div className="mt" style={{ marginTop: 6 }}>정답: <b className="en">{q.kind === 'choice' ? `${q.answer}번 — ${plainText(q.choices?.[Number(q.answer) - 1] ?? '')}` : q.answer}</b></div>}
+          <b>{lastCorrect ? (near ? '정답 (비슷한 뜻으로 인정)' : '정답') : '오답'}</b>
+          {lastCorrect && near && <div style={{ marginTop: 6 }}>정확한 뜻: <b>{near}</b>{q.pos && <span className="muted small"> ({q.pos})</span>}</div>}
+          {!lastCorrect && <div className="mt" style={{ marginTop: 6 }}>정답: <b className="en">{q.kind === 'choice' ? `${q.answer}번 — ${plainText(q.choices?.[Number(q.answer) - 1] ?? '')}` : q.answer}</b>{q.pos && <span className="muted small"> · 품사: {q.pos}</span>}</div>}
           {q.explanation && <div className="muted small" style={{ marginTop: 4 }}>{q.explanation}</div>}
           {!lastCorrect && q.passageKo && <PassageKo text={q.passageKo} open />}
         </div>

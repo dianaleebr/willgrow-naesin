@@ -69,7 +69,7 @@ function RangeForm({ range, pubs, schools, teacherId, onDone }) {
       <div className="card stack">
         <div className="grid3">
           <div><label className="field">학교</label><input className="input" list="schools" value={f.school} onChange={(e) => setF({ ...f, school: e.target.value })} placeholder="거제중" /><datalist id="schools">{schools.map((s) => <option key={s} value={s} />)}</datalist></div>
-          <div><label className="field">학년</label><select className="input" value={f.grade} onChange={(e) => setF({ ...f, grade: e.target.value, unit_ids: [] })}><option value={1}>중1</option><option value={2}>중2</option><option value={3}>중3</option></select></div>
+          <div><label className="field">학년</label><select className="input" value={f.grade} onChange={(e) => setF({ ...f, grade: e.target.value, unit_ids: [] })}>{[1, 2, 3].map((g) => <option key={g} value={g}>{(pubs.find((p) => String(p.id) === String(f.publisher_id))?.level || '중')}{g}</option>)}</select></div>
           <div><label className="field">시험일</label><input className="input" type="date" value={f.exam_date || ''} onChange={(e) => setF({ ...f, exam_date: e.target.value })} /></div>
         </div>
         <div className="row"><div className="grow"><label className="field">제목</label><input className="input" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="거제중 2학년 1학기 중간" /></div><button className="btn sm" style={{ marginTop: 18 }} onClick={autoTitle}>자동 제목</button></div>

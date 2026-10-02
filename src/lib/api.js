@@ -1,5 +1,5 @@
 import { supabase, rpc, unwrap } from './supabase.js';
-import { gradeText, gradeMeaning, gradeChoice, gradeBlanks } from './grading.js';
+import { gradeText, gradeMeaning, matchMeaning, gradeChoice, gradeBlanks } from './grading.js';
 
 export const MATERIALS = [
   { key: 'words', label: '단어장', desc: '영어·뜻·품사·예문·발음' },
@@ -67,10 +67,37 @@ export const liveForClass = (className) => supabase.from('live_sessions').select
 
 // ---------- 문제 만들기 (QuizRunner 공용 형식) ----------
 //  { key, item_type, item_id, unit_id, sub_mode, kind:'text'|'choice'|'blanks', prompt, hint, choices, answers, answer, explanation, grade(fn) }
-export function wordQuestions(words, unitId, mode /* ko2en | en2ko */) {
-  return words.map((w) => mode === 'ko2en'
-    ? { key: `word-${w.id}-ko2en`, item_type: 'word', item_id: w.id, unit_id: unitId, sub_mode: 'ko2en', kind: 'text', prompt: w.ko, hint: w.pos, answer: w.en, placeholder: '영어 단어 입력', grade: (a) => gradeText(a, w.en), display: `${w.en} — ${w.ko}` }
-    : { key: `word-${w.id}-en2ko`, item_type: 'word', item_id: w.id, unit_id: unitId, sub_mode: 'en2ko', kind: 'text', prompt: w.en, hint: w.pos, speak: w.en, answer: w.ko, placeholder: '뜻 입력 (하나만 써도 됨)', grade: (a) => gradeMeaning(a, w.ko), display: `${w.en} — ${w.ko}` });
+export const WORD_MODE_LABEL = { ko2en: '한→영', en2ko: '영→한', syn: '유의어', ant: '반의어', sense: '다의어' };
+export const wordExtra = (w) => (w && w.extra && typeof w.extra === 'object') ? { senses: w.extra.senses || [], syn: w.extra.syn || [], ant: w.extra.ant || [] } : { senses: [], syn: [], ant: [] };
+export const hasRelation = (w) => { const x = wordExtra(w); return x.syn.length > 0 || x.ant.length > 0; };
+export const hasSenses = (w) => wordExtra(w).senses.length >= 2;
+const underlineWord = (sentence, en) => {
+  const base = en.replace(/[^A-Za-z]/g, ' ').trim().split(/\s+/)[0] || en;
+  const stem = (base.length > 4 ? base.slice(0, -1) : base).replace(/[^A-Za-z]/g, '');
+  const re = new RegExp('\\b(' + stem + '[A-Za-z]*)', 'i');
+  return re.test(sentence) ? sentence.replace(re, '<u>$1</u>') : sentence;
+};
+// mode: ko2en | en2ko | syn | ant | sense (유의어·반의어·다의어는 extra 가 있는 단어만 문제가 됨)
+export function wordQuestions(words, unitId, mode /* ko2en | en2ko | syn | ant | sense | rel(=syn+ant) */) {
+  const out = [];
+  for (const w of words) {
+    const x = wordExtra(w);
+    if (mode === 'ko2en') out.push({ key: `word-${w.id}-ko2en`, item_type: 'word', item_id: w.id, unit_id: unitId, sub_mode: 'ko2en', kind: 'text', prompt: w.ko, hint: w.pos, answer: w.en, placeholder: '영어 단어 입력', grade: (a) => gradeText(a, w.en), display: `${w.en} — ${w.ko}` });
+    else if (mode === 'en2ko') out.push({ key: `word-${w.id}-en2ko`, item_type: 'word', item_id: w.id, unit_id: unitId, sub_mode: 'en2ko', kind: 'text', prompt: w.en, hint: null, pos: w.pos, speak: w.en, answer: w.ko, placeholder: '뜻 입력 (하나만 써도 됨)', grade: (a) => gradeMeaning(a, w.ko), match: (a) => matchMeaning(a, w.ko), display: `${w.en} — ${w.ko}` });
+    else if (mode === 'syn' || mode === 'ant' || mode === 'rel') {
+      for (const t of (mode === 'rel' ? ['syn', 'ant'] : [mode])) {
+        const list = x[t]; if (!list.length) continue;
+        const sense = list[0].sense || w.ko; const ens = list.map((r) => r.en);
+        const label = t === 'syn' ? '유의어' : '반의어';
+        out.push({ key: `word-${w.id}-${t}`, item_type: 'word', item_id: w.id, unit_id: unitId, sub_mode: t, kind: 'text', prompt: `${w.en}\n${sense} — 이 뜻의 ${label}는?`, hint: null, speak: w.en, answer: list.map((r) => r.en + (r.ko ? ` (${r.ko})` : '')).join(' / '), placeholder: `${label} 영어 입력 (하나만 써도 됨)`, grade: (a) => gradeText(a, ens.join('/')), display: `${w.en} ${label}: ${ens.join(', ')}`, tag: label });
+      }
+    } else if (mode === 'sense') {
+      x.senses.forEach((sn, i) => { if (!sn.ex_en) return;
+        out.push({ key: `word-${w.id}-sense-${i}`, item_type: 'word', item_id: w.id, unit_id: unitId, sub_mode: 'sense', kind: 'text', prompt: `${underlineWord(sn.ex_en, w.en)}\n밑줄 친 ${w.en} 의 뜻은? (이 문장에서)`, hint: null, pos: sn.pos, speak: sn.ex_en, answer: sn.ko, explanation: sn.ex_ko ? `해석: ${sn.ex_ko}` : null, placeholder: '뜻 입력', grade: (a) => gradeMeaning(a, sn.ko), match: (a) => matchMeaning(a, sn.ko), display: `${w.en} (${sn.pos || ''}) — ${sn.ko}`, tag: '다의어' });
+      });
+    }
+  }
+  return out;
 }
 export function blankQuestions(items, unitId, source /* dialogue | reading */) {
   return items.map((b) => ({

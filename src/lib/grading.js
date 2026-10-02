@@ -5,6 +5,8 @@
 //  - 한글 답: 띄어쓰기 무시, 복수 뜻 중 하나만 맞아도 정답
 //  - 철자 오류는 오답
 
+import { KO_SYNONYM_GROUPS } from './ko_synonyms.js';
+
 const PUNCT_RE = /[.,!?;:'"’‘“”…()\[\]{}]/g;
 const HYPHEN_RE = /[-–—]/g;   // 하이픈은 공백으로 (well-known = well known)
 
@@ -23,6 +25,35 @@ const CONTRACTIONS = [
   [/\b(i|you|we|they|could|would|should|must|might)ve\b/g, '$1 have'],
   [/\blets\b/g, 'let us'],
 ];
+
+// 같은 뜻의 표현은 같은 꼴로 (Can you ~? = Could you ~? = Would you ~? 등). 정규화·축약형 복원 뒤에 적용
+const EQUIV = [
+  [/\b(could|would|will) you\b/g, 'can you'],
+  [/\b(could|may) i\b/g, 'can i'],
+  [/\b(could|may) we\b/g, 'can we'],
+  [/\bwould you like to\b/g, 'do you want to'],
+  [/\bwould you like\b/g, 'do you want'],
+  [/\b(i|we|you|they) would like to\b/g, '$1 want to'],
+  [/\b(i|we|you|they) would like\b/g, '$1 want'],
+  [/\b(he|she|it) would like to\b/g, '$1 wants to'],
+  [/\b(am|is|are) going to\b/g, 'will'],
+  [/\b(have|has) to\b/g, 'must'],
+  [/\b(have|has) got to\b/g, 'must'],
+  [/\bwhat about\b/g, 'how about'],
+  [/\b(lots of|a lot of|plenty of)\b/g, 'many'],
+  [/\bthanks\b/g, 'thank you'],
+  [/\b(yeah|yep|yes)\b/g, 'yes'],
+  [/\b(okay|ok|alright|all right)\b/g, 'ok'],
+  [/\bdue to\b/g, 'because of'],
+  [/\bin order to\b/g, 'to'],
+  [/\b(gonna)\b/g, 'will'],
+  [/\bwanna\b/g, 'want to'],
+];
+export function canonEn(t) {
+  let u = t;
+  for (const [re, rep] of EQUIV) u = u.replace(re, rep);
+  return u.replace(/\s+/g, ' ').trim();
+}
 
 export function normalizeEn(s) {
   if (s == null) return '';
@@ -55,20 +86,66 @@ export function gradeText(studentAnswer, answer) {
   const stu = korean ? normalizeKo(studentAnswer) : normalizeEn(studentAnswer);
   if (!stu) return false;
   const answers = splitAnswers(answer, { korean });
-  return answers.some((a) => (korean ? normalizeKo(a) : normalizeEn(a)) === stu);
+  if (answers.some((a) => (korean ? normalizeKo(a) : normalizeEn(a)) === stu)) return true;
+  // 영어: 같은 뜻의 표현 (Can you = Could you, be going to = will ...) 은 정답
+  if (!korean) { const c = canonEn(stu); return answers.some((a) => canonEn(normalizeEn(a)) === c); }
+  return false;
 }
 
-// 영→한 (뜻 쓰기): 뜻이 "취향, 맛" 처럼 여러 개면 하나만 맞아도 정답
-export function gradeMeaning(studentAnswer, koMeaning) {
-  const stu = normalizeKo(studentAnswer);
-  if (!stu) return false;
-  return splitAnswers(koMeaning, { korean: true }).some((m) => {
-    const n = normalizeKo(m);
-    // "~을 더 좋아하다" 처럼 조사·물결 제거 후 비교, 괄호 안 보조 설명은 제거
-    const core = n.replace(/\(.*?\)/g, '');
-    return n === stu || core === stu;
-  });
+// ---------- 영→한 (뜻 쓰기) 느슨한 채점 ----------
+// 규칙: 정확히 같으면 정답. 아니면 품사(서술형/부사/명사) 가 같고 뜻이 비슷하면(같은 어간 또는 유의어 묶음) 정답 인정 + 정확한 뜻 표시.
+//   예) refuse 정답 "~을 거부하다" 에 "거절하다" → 정답 인정, "정확한 뜻: ~을 거부하다" 표시
+//       "거절" (명사형) → 품사가 다르므로 오답
+const stripParen = (s) => String(s ?? '').replace(/\([^)]*\)/g, '');
+const PRED_END = ['스러운', '스럽다', '시키다', '당하다', '로운', '롭다', '하다', '되다', '하는', '되는', '한', '된', '운', '은', '는', '다'];
+const ADV_END = ['적으로', '스레', '롭게', '하게', '되게', '히', '게'];
+const N_SYL = ['른', '큰', '쁜', '픈', '센', '린', '진', '친', '싼', '짠', '먼', '흰', '긴', '난', '푼', '뜬', '잔', '찬', '단'];
+// 어간 + 품사 부류 ('pred' 동사·형용사 | 'adv' 부사 | 'noun' 그 외)
+export function koStem(norm) {
+  let s = norm;
+  for (const e of ADV_END) if (s.length > e.length + 1 && s.endsWith(e)) return [s.slice(0, -e.length).replace(/적$/, ''), 'adv'];
+  for (const e of PRED_END) {
+    const min = e === '다' || e === '한' || e === '은' || e === '는' ? 1 : 2;
+    if (s.length - e.length >= min && s.endsWith(e)) { s = s.slice(0, -e.length).replace(/적$/, ''); return [s, 'pred']; }
+  }
+  const last = s[s.length - 1];
+  if (s.length >= 2 && N_SYL.includes(last)) {   // 다른→다르, 큰→크 (받침 ㄴ 제거)
+    const code = last.charCodeAt(0) - 0xac00; const jong = code % 28;
+    if (jong === 4) return [s.slice(0, -1) + String.fromCharCode(0xac00 + code - 4), 'pred'];
+  }
+  return [s.replace(/적$/, ''), 'noun'];
 }
+let SYN_MAP = null;
+function synGroupOf(stem) {
+  if (!SYN_MAP) {
+    SYN_MAP = new Map();
+    const add = (k, gi) => { if (!SYN_MAP.has(k)) SYN_MAP.set(k, new Set()); SYN_MAP.get(k).add(gi); };
+    KO_SYNONYM_GROUPS.forEach((g, gi) => g.forEach((w) => { const n = normalizeKo(w); add(n, gi); add(koStem(n)[0], gi); add(n.replace(/(하|되)$/, ''), gi); }));
+  }
+  return SYN_MAP.get(stem) || null;
+}
+
+// 결과: { ok, exact, matched } — matched = 인정된 교과서 뜻 (정확히 표시용)
+export function matchMeaning(studentAnswer, koMeaning) {
+  const stu = normalizeKo(stripParen(studentAnswer));
+  if (!stu) return { ok: false, exact: false, matched: null };
+  const meanings = splitAnswers(koMeaning, { korean: true });
+  for (const m of meanings) {
+    const n = normalizeKo(m); const core = normalizeKo(stripParen(m));
+    if (n === stu || core === stu) return { ok: true, exact: true, matched: m };
+  }
+  const [ss, cs] = koStem(stu);
+  for (const m of meanings) {
+    const core = normalizeKo(stripParen(m)); if (!core) continue;
+    const [sm, cm] = koStem(core);
+    if (cs !== cm) continue;                       // 품사가 다르면 인정 안 함
+    if (ss === sm) return { ok: true, exact: false, matched: m };
+    const ga = synGroupOf(ss), gb = synGroupOf(sm);
+    if (ga && gb && [...ga].some((g) => gb.has(g))) return { ok: true, exact: false, matched: m };
+  }
+  return { ok: false, exact: false, matched: null };
+}
+export function gradeMeaning(studentAnswer, koMeaning) { return matchMeaning(studentAnswer, koMeaning).ok; }
 
 // 한→영 (영어 쓰기): 영어 규칙
 export function gradeWordEn(studentAnswer, en) {

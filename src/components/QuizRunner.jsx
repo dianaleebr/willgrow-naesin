@@ -134,7 +134,7 @@ export default function QuizRunner({ questions: initialQuestions, mode = 'homewo
           <b>{lastCorrect ? '정답' : '오답'}</b>
           {!lastCorrect && <div className="mt" style={{ marginTop: 6 }}>정답: <b className="en">{q.kind === 'choice' ? `${q.answer}번 — ${plainText(q.choices?.[Number(q.answer) - 1] ?? '')}` : q.answer}</b></div>}
           {q.explanation && <div className="muted small" style={{ marginTop: 4 }}>{q.explanation}</div>}
-          {!lastCorrect && q.passageKo && <PassageKo text={q.passageKo} />}
+          {!lastCorrect && q.passageKo && <PassageKo text={q.passageKo} open />}
         </div>
       )}
 

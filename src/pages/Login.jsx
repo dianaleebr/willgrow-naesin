@@ -7,13 +7,12 @@ export default function Login() {
   const { login } = useAuth();
   const [id, setId] = useState('');
   const [pw, setPw] = useState('');
-  const [remember, setRemember] = useState(true);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault(); setErr(''); setBusy(true);
-    try { await login(id, pw, remember); } catch (ex) { setErr(ex.message); } finally { setBusy(false); }
+    try { await login(id, pw); } catch (ex) { setErr(ex.message); } finally { setBusy(false); }
   };
 
   return (
@@ -30,7 +29,6 @@ export default function Login() {
           <label className="field">비밀번호</label>
           <input className="input" type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="current-password" required />
         </div>
-        <label className="check"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> 로그인 상태 유지</label>
         {err && <div className="error">{err}</div>}
         <button className="btn primary lg block" disabled={busy}>{busy ? '로그인 중…' : '로그인'}</button>
       </form>

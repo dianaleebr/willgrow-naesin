@@ -58,7 +58,8 @@ create table if not exists public.words (
   pos text,
   example text,
   category text,                      -- 예: 대화문 / 본문 (교재 어휘 목록 구분)
-  sort_order int default 0
+  sort_order int default 0,
+  extra jsonb                         -- {senses:[{pos,ko,ex_en,ex_ko}], syn:[{en,ko,sense}], ant:[{en,ko,sense}]}
 );
 
 create table if not exists public.dialogues (

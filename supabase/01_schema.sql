@@ -171,6 +171,7 @@ create table if not exists public.exam_ranges (
   title text not null,                -- 예: 거제중 2학년 1학기 중간
   school text not null,
   grade int not null,
+  level text not null default '중' check (level in ('중','고')),   -- 중/고 구분
   publisher_id int references public.publishers(id) on delete set null,
   exam_date date,
   include_words boolean default true,
@@ -181,6 +182,7 @@ create table if not exists public.exam_ranges (
   created_by uuid references public.profiles(id),
   created_at timestamptz default now()
 );
+alter table public.exam_ranges add column if not exists level text not null default '중' check (level in ('중','고'));
 
 create table if not exists public.exam_range_units (
   range_id int not null references public.exam_ranges(id) on delete cascade,
@@ -544,7 +546,7 @@ begin
     select p.id, p.name, p.school, p.grade, p.class_name from public.profiles p
     where p.role = 'student'
       and (p_student_id is null or p.id = p_student_id)
-      and (p_student_id is not null or (p.school = r.school and p.grade = r.grade))
+      and (p_student_id is not null or (p.school = r.school and p.grade = r.grade and p.level = r.level))
   ),
   w_items as (select w.id from public.words w where r.include_words and w.unit_id in (select unit_id from units_in)),
   d_items as (select b.id from public.blank_items b where r.include_dialogue and b.source='dialogue' and b.unit_id in (select unit_id from units_in)),

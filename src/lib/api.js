@@ -53,7 +53,7 @@ export const listWrongNotes = (status = 'open', { itemType, unitId } = {}) => {
 };
 export const countOpenWrong = () => supabase.from('wrong_notes').select('id', { count: 'exact', head: true }).eq('status', 'open').then(({ count, error }) => { if (error) throw new Error(error.message); return count || 0; });
 
-export const myRanges = (profile) => supabase.from('exam_ranges').select('*, exam_range_units(unit_id)').eq('school', profile.school || '').eq('grade', profile.grade || 0).order('exam_date').then(unwrap);
+export const myRanges = (profile) => supabase.from('exam_ranges').select('*, exam_range_units(unit_id)').eq('school', profile.school || '').eq('grade', profile.grade || 0).eq('level', profile.level || '중').order('exam_date').then(unwrap);
 export const rangeProgress = (rangeId, studentId = null) => rpc('range_progress', { p_range_id: rangeId, p_student_id: studentId });
 
 export const myHomework = (className) => supabase.from('homework').select('*, units(unit_no, grade, title, publishers(name, level)), homework_completions(student_id)').eq('class_name', className || '').gte('due_date', today()).order('due_date').then(unwrap);

@@ -28,7 +28,7 @@ export default function Ranges() {
           <div key={r.id} className="item" style={{ alignItems: 'flex-start' }}>
             <div className="grow">
               <b>{r.title}</b> {r.exam_date && <span className={`badge ${dday(r.exam_date) <= 7 && dday(r.exam_date) >= 0 ? 'red' : ''}`}>{r.exam_date} (D{dday(r.exam_date) >= 0 ? '-' : '+'}{Math.abs(dday(r.exam_date))})</span>}
-              <div className="small muted">{r.school} {r.grade}학년 · {r.publishers?.name} · {(r.exam_range_units || []).map((x) => `L${x.units?.unit_no}`).join(', ') || '유닛 없음'} · {[r.include_words && '단어', r.include_dialogue && '대화문', r.include_reading && '본문', r.include_exam && `기출${r.exam_years ? '(' + r.exam_years.join('·') + ')' : ''}`].filter(Boolean).join(' / ')}</div>
+              <div className="small muted">{r.school} {r.level || '중'}{r.grade} · {r.publishers?.name} · {(r.exam_range_units || []).map((x) => `L${x.units?.unit_no}`).join(', ') || '유닛 없음'} · {[r.include_words && '단어', r.include_dialogue && '대화문', r.include_reading && '본문', r.include_exam && `기출${r.exam_years ? '(' + r.exam_years.join('·') + ')' : ''}`].filter(Boolean).join(' / ')}</div>
             </div>
             <button className="btn sm" onClick={() => setEditing(r)}>수정</button><button className="btn sm ghost" onClick={() => del(r)}>삭제</button>
           </div>
@@ -40,7 +40,8 @@ export default function Ranges() {
 
 function RangeForm({ range, pubs, schools, teacherId, onDone }) {
   const [f, setF] = useState(range ? { ...range, exam_years: (range.exam_years || []).join(','), unit_ids: (range.exam_range_units || []).map((x) => x.unit_id) }
-    : { title: '', school: schools[0] || '', grade: 2, publisher_id: pubs[0]?.id || '', exam_date: '', include_words: true, include_dialogue: true, include_reading: true, include_exam: true, exam_years: '', unit_ids: [] });
+    : { title: '', school: schools[0] || '', grade: 2, level: '중', publisher_id: pubs[0]?.id || '', exam_date: '', include_words: true, include_dialogue: true, include_reading: true, include_exam: true, exam_years: '', unit_ids: [] });
+  const gl = `${f.level || '중'}${f.grade}`;   // 학년 표시 (중1~고3)
   const units = useAsync(() => (f.publisher_id ? listUnits(Number(f.publisher_id), Number(f.grade)) : []), [f.publisher_id, f.grade]);
   const years = useAsync(async () => {
     if (!f.unit_ids.length) return [];
@@ -49,11 +50,11 @@ function RangeForm({ range, pubs, schools, teacherId, onDone }) {
   }, [f.unit_ids.join(',')]);
   const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
   const toggleUnit = (id) => setF({ ...f, unit_ids: f.unit_ids.includes(id) ? f.unit_ids.filter((x) => x !== id) : [...f.unit_ids, id] });
-  const autoTitle = () => setF({ ...f, title: `${f.school} ${f.grade}학년 ${f.exam_date ? (new Date(f.exam_date).getMonth() + 1 <= 6 ? '1학기' : '2학기') + ' ' : ''}시험` });
+  const autoTitle = () => setF({ ...f, title: `${f.school} ${gl} ${f.exam_date ? (new Date(f.exam_date).getMonth() + 1 <= 6 ? '1학기' : '2학기') + ' ' : ''}시험` });
   const save = async () => {
     setBusy(true); setErr('');
     try {
-      const row = { title: f.title || `${f.school} ${f.grade}학년 시험`, school: f.school, grade: Number(f.grade), publisher_id: Number(f.publisher_id) || null, exam_date: f.exam_date || null,
+      const row = { title: f.title || `${f.school} ${gl} 시험`, school: f.school, grade: Number(f.grade), level: f.level || '중', publisher_id: Number(f.publisher_id) || null, exam_date: f.exam_date || null,
         include_words: f.include_words, include_dialogue: f.include_dialogue, include_reading: f.include_reading, include_exam: f.include_exam,
         exam_years: f.exam_years.trim() ? f.exam_years.split(/[,\s·]+/).map(Number).filter(Boolean) : null, created_by: teacherId };
       let id = range?.id;
@@ -68,8 +69,7 @@ function RangeForm({ range, pubs, schools, teacherId, onDone }) {
       <div className="row"><button className="btn sm" onClick={onDone}>‹ 목록</button><h1 style={{ margin: 0 }}>{range ? '시험범위 수정' : '새 시험범위'}</h1></div>
       <div className="card stack">
         <div className="grid3">
-          <div><label className="field">학교</label><input className="input" list="schools" value={f.school} onChange={(e) => setF({ ...f, school: e.target.value })} placeholder="거제중" /><datalist id="schools">{schools.map((s) => <option key={s} value={s} />)}</datalist></div>
-          <div><label className="field">학년</label><select className="input" value={f.grade} onChange={(e) => setF({ ...f, grade: e.target.value, unit_ids: [] })}>{[1, 2, 3].map((g) => <option key={g} value={g}>{(pubs.find((p) => String(p.id) === String(f.publisher_id))?.level || '중')}{g}</option>)}</select></div>
+          <div><label className="field">학교</label><input className="input" list="schools" value={f.school} onChange={(e) => setF({ ...f, school: e.target.value })} placeholder="          <div><label className="field">학년</label><select className="input" value={`${f.level || '중'}${f.grade}`} onChange={(e) => setF({ ...f, level: e.target.value[0], grade: Number(e.target.value[1]), unit_ids: [] })}>{['중1', '중2', '중3', '고1', '고2', '고3'].map((g) => <option key={g} value={g}>{g}</option>)}</select></div>.find((p) => String(p.id) === String(f.publisher_id))?.level || '중')}{g}</option>)}</select></div>
           <div><label className="field">시험일</label><input className="input" type="date" value={f.exam_date || ''} onChange={(e) => setF({ ...f, exam_date: e.target.value })} /></div>
         </div>
         <div className="row"><div className="grow"><label className="field">제목</label><input className="input" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="거제중 2학년 1학기 중간" /></div><button className="btn sm" style={{ marginTop: 18 }} onClick={autoTitle}>자동 제목</button></div>

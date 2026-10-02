@@ -38,7 +38,7 @@ export default function Dashboard() {
           <label className="check" style={{ marginTop: 18 }}><input type="checkbox" checked={sortLow} onChange={(e) => setSortLow(e.target.checked)} /> 진도 낮은 순</label>
           <button className="btn" style={{ marginTop: 18 }} onClick={exportCsv}>CSV 내보내기</button>
         </div>
-        {range && <div className="muted small">{range.school} {range.grade}학년 · 시험일 {range.exam_date || '-'} {range.exam_date ? `(D-${dday(range.exam_date)})` : ''} · 대상 학생 {rows.length}명</div>}
+        {range && <div className="muted small">{range.school} {range.level || '중'}{range.grade} · 시험일 {range.exam_date || '-'} {range.exam_date ? `(D-${dday(range.exam_date)})` : ''} · 대상 학생 {rows.length}명</div>}
         {prog.loading ? <Loading /> : prog.error ? <ErrorBox error={prog.error} /> : (
           <div className="tbl-wrap"><table className="tbl">
             <thead><tr><th>이름</th><th>반</th><th>단어테스트</th><th>대화문 빈칸</th><th>본문 빈칸</th><th>본문 유형별</th><th>기출 풀이</th><th>기출 정답률</th><th>남은 오답</th></tr></thead>

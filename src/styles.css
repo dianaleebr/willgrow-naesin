@@ -174,3 +174,11 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 
 .clickword.on { background: var(--red-soft); border-color: var(--red); color: var(--red); font-weight: 700; }
 .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
 hr.sep { border: none; border-top: 1px solid var(--line); margin: 14px 0; }
+
+/* 단어장: 유의어·반의어 칩, 다의어 목록 */
+.chip { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg2); white-space: nowrap; }
+.chip.syn { border-color: #9ad0b0; background: #eaf7ef; color: #1d6b3f; }
+.chip.ant { border-color: #f0b3b3; background: #fdeeee; color: #9b2c2c; }
+.senses { margin: 4px 0 0 18px; padding: 0; display: grid; gap: 4px; }
+.senses li { font-size: 14px; }
+.senses .ex { font-size: 13px; margin-top: 2px; }

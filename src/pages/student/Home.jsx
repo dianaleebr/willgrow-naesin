@@ -36,7 +36,7 @@ export default function Home() {
     <div className="stack">
       <div>
         <h1>{profile.name}</h1>
-        <div className="muted">{profile.school} {profile.grade ? `${profile.level || '중'}${profile.grade}` : ''} · {profile.class_name} · {profile.publisher_name || '출판사 미지정'}</div>
+        <div className="muted">{profile.school} {profile.grade ? `${profile.level || '중'}${profile.grade}` : ''} · {profile.class_name} · {profile.publisher_name || '출판사 미지정'} · <button className="btn ghost sm" style={{ padding: '2px 8px', minHeight: 0 }} onClick={() => nav('/password')}>비밀번호 바꾸기</button></div>
       </div>
 
       {live && (

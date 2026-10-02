@@ -3,6 +3,8 @@
 """
 import json, re, os, sys, glob
 from collections import defaultdict
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import dialogue_blanks
 
 TXT = sys.argv[1] if len(sys.argv) > 1 else '/home/claude/txt'
 OUT = sys.argv[2] if len(sys.argv) > 2 else '/home/claude/willgrow-naesin/content'
@@ -89,25 +91,68 @@ def parse_words(flat):
     return out
 
 # ---------- 본문 (워크북 2 = 영문 + 우리말빈칸, 워크북 3 = 우리말 + 영문빈칸) ----------
+def split_qa(t):
+    """레코드의 줄들을 (질문 줄들, 빈칸 줄들)로 나눔. 빈칸 줄 = 마지막 줄과 같은 언어의 줄들.
+    예) EN\nEN\nKO빈칸\nKO빈칸 (워크북2) / KO\nKO\nEN빈칸\nEN빈칸 (워크북3·5·6)"""
+    lines = [x.strip() for x in t.split('\n') if x.strip()]
+    if len(lines) < 2: return None
+    def is_ko(x): h = len(HANGUL.findall(x)); return h >= 3 or (h > 0 and h >= len(LATIN.findall(x)))
+    if any('______' in x for x in lines): has_blank = lambda x: '______' in x
+    else: has_blank = lambda x: bool(re.search(r'\([a-z ,]+\)|\[[^\]]+/[^\]]+\]', x))
+    bl = [x for x in lines if has_blank(x)] or [lines[-1]]
+    votes = [is_ko(x) for x in bl if HANGUL.search(x) or LATIN.search(x)]
+    h = sum(len(HANGUL.findall(x)) for x in bl); e = sum(len(LATIN.findall(x)) for x in bl)
+    tgt = (sum(votes) * 2 > len(votes)) if votes and sum(votes) * 2 != len(votes) else (h >= e if (h or e) else is_ko(lines[-1]))   # 빈칸 줄들의 언어
+    start = next((i for i, x in enumerate(lines) if has_blank(x) or is_ko(x) == tgt), None)
+    if not start:   # 첫 줄부터 빈칸이면 언어로 나눔
+        q = [x for x in lines if is_ko(x) != tgt]; b = [x for x in lines if is_ko(x) == tgt]
+    else:
+        q, b = lines[:start], lines[start:]
+    if not q or not b: return None
+    return ' '.join(q), ' '.join(b)
+
 def parse_workbook(flat):
-    """[(질문문장(첫줄), 빈칸문장(둘째줄), 정답리스트)]"""
+    """[(질문문장, 빈칸문장, 정답리스트)]"""
     items = []
     pend = None
     for l, t in flat:
         t = t.rstrip()
         if pend is None:
-            if '\n' in t and '______' in t:
-                first, second = t.split('\n', 1)
-                pend = (first.strip(), second.strip())
-            elif '\n' in t and re.search(r'\([a-z ,]+\)|\[[^\]]+/[^\]]+\]', t.split('\n', 1)[1]):
-                first, second = t.split('\n', 1)
-                pend = (first.strip(), second.strip())
+            if '\n' in t and ('______' in t or re.search(r'\([a-z ,]+\)|\[[^\]]+/[^\]]+\]', t.split('\n', 1)[1])):
+                qa = split_qa(t)
+                if qa: pend = qa
         else:
             if l == 3 and ('워크북' in t): continue
+            if '<TABLE' in t or '│' in t or '이그잼포유' in t or '저작권' in t: continue
             if l >= 3:
                 ans = [a.strip() for a in t.strip().split('/')]
                 items.append((pend[0], pend[1], ans)); pend = None
     return items
+
+IRREG = {'be': {'am', 'is', 'are', 'was', 'were', 'been', 'being'}, 'have': {'has', 'had', 'having'}, 'do': {'does', 'did', 'done'}, 'go': {'went', 'gone'}, 'get': {'got', 'gotten'}, 'make': {'made'}, 'take': {'took', 'taken'}, 'give': {'gave', 'given'}, 'see': {'saw', 'seen'}, 'come': {'came'}, 'run': {'ran'}, 'eat': {'ate', 'eaten'}, 'write': {'wrote', 'written'}, 'speak': {'spoke', 'spoken'}, 'know': {'knew', 'known'}, 'think': {'thought'}, 'bring': {'brought'}, 'buy': {'bought'}, 'teach': {'taught'}, 'catch': {'caught'}, 'feel': {'felt'}, 'keep': {'kept'}, 'leave': {'left'}, 'meet': {'met'}, 'say': {'said'}, 'tell': {'told'}, 'find': {'found'}, 'build': {'built'}, 'begin': {'began', 'begun'}, 'fly': {'flew', 'flown'}, 'grow': {'grew', 'grown'}, 'hold': {'held'}, 'lead': {'led'}, 'lose': {'lost'}, 'sit': {'sat'}, 'stand': {'stood'}, 'win': {'won'}, 'wear': {'wore', 'worn'}, 'fall': {'fell', 'fallen'}, 'hear': {'heard'}, 'sell': {'sold'}, 'send': {'sent'}, 'spend': {'spent'}, 'sleep': {'slept'}, 'understand': {'understood'}, 'become': {'became'}, 'choose': {'chose', 'chosen'}, 'drive': {'drove', 'driven'}, 'draw': {'drew', 'drawn'}, 'forget': {'forgot', 'forgotten'}, 'hide': {'hid', 'hidden'}, 'lie': {'lay', 'lain', 'lying'}, 'rise': {'rose', 'risen'}, 'show': {'showed', 'shown'}, 'throw': {'threw', 'thrown'}, 'swim': {'swam', 'swum'}, 'sing': {'sang', 'sung'}, 'ring': {'rang', 'rung'}, 'drink': {'drank', 'drunk'}, 'break': {'broke', 'broken'}, 'steal': {'stole', 'stolen'}, 'freeze': {'froze', 'frozen'}, 'pay': {'paid'}, 'lay': {'laid'}, 'mean': {'meant'}, 'read': {'read'}, 'put': {'put'}, 'cut': {'cut'}, 'let': {'let'}, 'set': {'set'}, 'hit': {'hit'}, 'shut': {'shut'}, 'hurt': {'hurt'}, 'cost': {'cost'}, 'can': {'could'}, 'will': {'would'}, 'shall': {'should'}, 'may': {'might'}}
+def verb_related(h, a):
+    """괄호 힌트 '(be)' '(not, worry)' 가 정답 'was' 'don’t worry' 와 같은 동사인지"""
+    hws = [re.sub(r'[^a-z]', '', x.strip().lower()) for x in h.split(',')]
+    words = [w.lower().replace('’', "'") for w in re.findall(r'[A-Za-z’\']+', a)]
+    for hw in hws:
+        if not hw: continue
+        if any(w == hw or (len(hw) >= 3 and w.startswith(hw[:3])) or w in IRREG.get(hw, ()) or (hw == 'not' and ("n't" in w or w == 'not')) for w in words): return True
+    return False
+
+def align_blanks(prompt, ans):
+    """'___ ___ ___' 처럼 이어진 빈칸(단어별 밑줄)을 정답의 단어 수에 맞춰 어구 빈칸으로 합침"""
+    runs = list(re.finditer(r'___(?:\s+___)*', prompt))
+    if sum(len(r.group(0).split()) for r in runs) == len(ans): return prompt   # 이미 1:1
+    out = []; pos = 0; ai = 0
+    for r in runs:
+        out.append(prompt[pos:r.start()]); pos = r.end()
+        m = len(r.group(0).split()); rem = m; parts = []
+        while rem > 0 and ai < len(ans):
+            wc = max(1, len(ans[ai].split()))
+            parts.append('___'); ai += 1; rem -= min(wc, rem)
+        out.append(' '.join(parts) if parts else '___')
+    out.append(prompt[pos:])
+    return ''.join(out)
 
 def parse_reading(files):
     """워크북2: EN + KO빈칸,  워크북3: KO + EN빈칸 → 문장 목록 + 빈칸 4종"""
@@ -115,32 +160,61 @@ def parse_reading(files):
     w3 = parse_workbook(load(files['w3'])) if 'w3' in files else []
     w5 = parse_workbook(load(files['w5'])) if 'w5' in files else []
     w6 = parse_workbook(load(files['w6'])) if 'w6' in files else []
-    sentences = []
-    n = max(len(w2), len(w3))
-    for i in range(n):
-        en = w2[i][0] if i < len(w2) else fill(w3[i][1], w3[i][2])
-        ko = w3[i][0] if i < len(w3) else fill(w2[i][1], w2[i][2])
-        sentences.append({'en': clean(en), 'ko': clean(ko)})
+    # 문장 목록: 워크북 항목을 '영어 문장' 기준으로 모음 (파일마다 문장 수·순서가 다를 수 있어 위치가 아닌 내용으로 맞춤)
+    sentences = []; index = {}
+    def nkey(x):
+        x = x.lower().replace('’', "'")
+        x = re.sub(r"\b(i)'m\b", r'\1 am', x); x = re.sub(r"\b(\w+)'re\b", r'\1 are', x); x = re.sub(r"\b(\w+)'ll\b", r'\1 will', x); x = re.sub(r"\b(\w+)'ve\b", r'\1 have', x)
+        x = re.sub(r"\bcan't\b", 'can not', x); x = re.sub(r"\bwon't\b", 'will not', x); x = re.sub(r"\b(\w+)n't\b", r'\1 not', x); x = re.sub(r"\b(it|he|she|that|there|what|who|where|how)'s\b", r'\1 is', x); x = re.sub(r"\blet's\b", 'let us', x)
+        return re.sub(r'[^a-z0-9]', '', x)
+    def sent_of(en, ko):
+        k = nkey(en)
+        if k in index:
+            i = index[k]
+            if ko and not sentences[i]['ko']: sentences[i]['ko'] = clean(ko)
+            return i
+        index[k] = len(sentences); sentences.append({'en': clean(en), 'ko': clean(ko or '')}); return index[k]
+    def unmark(x): return re.sub(r'\s{2,}', ' ', x)
+    for q, blank, ans in w2: sent_of(q, fill(blank, ans))
+    for q, blank, ans in w3: sent_of(fill(align_blanks(re.sub(r'_{3,}', '___', blank), ans), ans), q)
+    for q, blank, ans in w5:
+        a = list(ans); sent_of(re.sub(r'\([^()]*\)', lambda m: a.pop(0) if a else m.group(0), blank) if len(re.findall(r'\([^()]*\)', blank)) == len(ans) else blank, q)
+    for q, blank, ans in w6:
+        a = list(ans); sent_of(re.sub(r'\[[^\]]*\]', lambda m: a.pop(0) if a else m.group(0), blank), q)
     blanks = []
     for kind, wb in (('w2', w2), ('w3', w3), ('w5', w5), ('w6', w6)):
-        for i, (q, blank, ans) in enumerate(wb):
+        for q, blank, ans in wb:
             prompt = blank
-            if kind in ('w5', 'w6'):
-                # (be) → ___(be) , [is / are] → ___[is / are]
-                prompt = re.sub(r'\(([^()]*)\)', r'___(\1)', prompt) if kind == 'w5' else re.sub(r'\[([^\]]*)\]', r'___[\1]', prompt)
+            if kind == 'w5':
+                hints = re.findall(r'\(([^()]*)\)', prompt)
+                if len(hints) > len(ans):
+                    # 괄호가 정답보다 많으면 동사 힌트가 아닌 괄호(뜻풀이 등)는 그대로 둠
+                    keep = set(); ai = 0
+                    for hi, h in enumerate(hints):
+                        if ai < len(ans) and verb_related(h, ans[ai]): keep.add(hi); ai += 1
+                    if len(keep) == len(ans):
+                        k2 = [0]
+                        def rep(m):
+                            i = k2[0]; k2[0] += 1
+                            return f'___({m.group(1)})' if i in keep else m.group(0)
+                        prompt = re.sub(r'\(([^()]*)\)', rep, prompt)
+                    else: prompt = re.sub(r'\(([^()]*)\)', r'___(\1)', prompt)
+                else: prompt = re.sub(r'\(([^()]*)\)', r'___(\1)', prompt)
+            elif kind == 'w6': prompt = re.sub(r'\[([^\]]*)\]', r'___[\1]', prompt)
             else:
                 prompt = re.sub(r'_{3,}', '___', prompt)
+                prompt = align_blanks(prompt, ans)
             nb = prompt.count('___')
-            if nb > len(ans):
-                # "___ ___" 처럼 이어진 빈칸은 하나의 어구 빈칸으로
-                while prompt.count('___') > len(ans) and re.search(r'___(\s+___)+', prompt):
-                    prompt = re.sub(r'___\s+___', '___', prompt, count=1)
-                nb = prompt.count('___')
             if nb != len(ans):
-                # 빈칸 수와 정답 수가 다르면 정답을 하나로 합침(안전)
                 ans = [' '.join(ans)] if nb == 1 else ans[:nb] + [''] * (nb - len(ans))
-            full_en = sentences[i]['en'] if i < len(sentences) else ''
-            full_ko = sentences[i]['ko'] if i < len(sentences) else ''
+            a = list(ans)
+            if kind == 'w2': en_full = q
+            elif kind == 'w3': en_full = fill(prompt, ans)
+            elif kind == 'w5': en_full = re.sub(r'___\(([^()]*)\)', lambda m: a.pop(0) if a else m.group(0), prompt)
+            else: en_full = re.sub(r'___\[([^\]]*)\]', lambda m: a.pop(0) if a else m.group(0), prompt)
+            i = index.get(nkey(en_full))
+            if i is None: i = sent_of(en_full, '' if kind == 'w2' else q)
+            full_en = sentences[i]['en']; full_ko = sentences[i]['ko']
             blanks.append({'difficulty': kind, 'sentence_index': i, 'prompt': clean(prompt), 'answers': ans, 'ko': clean(q),
                            'explanation': explain(kind, prompt, ans, full_en, full_ko)})
     return sentences, blanks
@@ -301,6 +375,7 @@ for (pub, grade, unit), files in sorted(units.items()):
     out = {'publisher': pub, 'level': level, 'grade': 1 if grade >= 10 else grade, 'unit': unit, 'unit_title': None, 'words': [], 'dialogues': [], 'reading': None, 'blanks': [], 'exam_questions': []}   # 공통영어1·2 = 고1 과정
     if 'naesin' in files:
         fl = load(files['naesin']); out['unit_title'] = unit_title(fl); out['dialogues'] = parse_dialogues(fl)
+        out['_naesin_flat'] = fl   # 대화문 빈칸은 ko_fill·대화 제거 후처리 뒤에 생성
     if files.get('_hint'): out['unit_title'] = (out['unit_title'] or '') and f"{files['_hint']} · {out['unit_title']}" or files['_hint']
     if 'words' in files: out['words'] = parse_words(load(files['words']))
     sentences, blanks = parse_reading(files)
@@ -318,7 +393,7 @@ for r in report: print(r)
 _fill_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ko_fill.json')
 if os.path.exists(_fill_path):
     fill = json.load(open(_fill_path)); drop = set(fill.pop('_drop', []))
-    for n in sorted(glob.glob(os.path.join(OUT, '*.json'))):
+    for n in sorted(x for x in glob.glob(os.path.join(OUT, '*.json')) if not os.path.basename(x).startswith('_')):
         b = os.path.basename(n); d = json.load(open(n)); keep = []
         for di, dl in enumerate(d['dialogues']):
             if f'{b}|{di}' in drop: continue
@@ -330,3 +405,14 @@ if os.path.exists(_fill_path):
         d['dialogues'] = keep
         json.dump(d, open(n, 'w'), ensure_ascii=False, indent=1)
     print('ko_fill applied')
+
+# ---------- 후처리 2: 대화문 빈칸(핵심 표현 위주) ----------
+for n in sorted(x for x in glob.glob(os.path.join(OUT, '*.json')) if not os.path.basename(x).startswith('_')):
+    d = json.load(open(n)); fl = d.pop('_naesin_flat', None)
+    items = dialogue_blanks.build(fl, d['dialogues']) if fl and d['dialogues'] else []
+    for it in items:
+        hint = it.pop('hint', None)
+        if hint: it['ko'] = (it.get('ko') or '') + (' · ' if it.get('ko') else '') + '빈칸: ' + hint
+    d['dialogue_blanks'] = items
+    json.dump(d, open(n, 'w'), ensure_ascii=False, indent=1)
+    print(os.path.basename(n), 'dialogue_blanks', len(items))

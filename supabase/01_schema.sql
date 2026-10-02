@@ -62,6 +62,13 @@ create table if not exists public.words (
   extra jsonb                         -- {senses:[{pos,ko,ex_en,ex_ko}], syn:[{en,ko,sense}], ant:[{en,ko,sense}]}
 );
 
+-- 본문분석 (내용정리 플러스 문장별 구문·문법 해설), 유닛당 1행
+create table if not exists public.reading_analysis (
+  unit_id int primary key references public.units(id) on delete cascade,
+  data jsonb not null,
+  updated_at timestamptz default now()
+);
+
 create table if not exists public.dialogues (
   id serial primary key,
   unit_id int not null references public.units(id) on delete cascade,
@@ -292,6 +299,11 @@ drop policy if exists words_read on public.words;
 create policy words_read on public.words for select to authenticated using (public.can_view_unit(unit_id));
 drop policy if exists words_write on public.words;
 create policy words_write on public.words for all to authenticated using (public.is_teacher()) with check (public.is_teacher());
+alter table public.reading_analysis enable row level security;
+drop policy if exists reading_analysis_read on public.reading_analysis;
+create policy reading_analysis_read on public.reading_analysis for select to authenticated using (public.can_view_unit(unit_id));
+drop policy if exists reading_analysis_write on public.reading_analysis;
+create policy reading_analysis_write on public.reading_analysis for all to authenticated using (public.is_teacher()) with check (public.is_teacher());
 
 drop policy if exists dialogues_read on public.dialogues;
 create policy dialogues_read on public.dialogues for select to authenticated using (public.can_view_unit(unit_id));

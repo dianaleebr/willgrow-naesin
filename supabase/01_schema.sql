@@ -22,10 +22,12 @@ create table if not exists public.profiles (
   role text not null default 'student' check (role in ('student','teacher')),
   school text,
   grade int check (grade between 1 and 3),
+  level text not null default '중' check (level in ('중','고')),   -- 중/고 구분
   class_name text,                    -- 반
   publisher_id int references public.publishers(id) on delete set null,
   created_at timestamptz default now()
 );
+alter table public.profiles add column if not exists level text not null default '중' check (level in ('중','고'));
 
 -- 전역 설정
 create table if not exists public.app_settings (

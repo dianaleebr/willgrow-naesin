@@ -1,4 +1,5 @@
-import { HashRouter, Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom';
+import { useEffect } from 'react';
+import { HashRouter, Routes, Route, Navigate, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/auth.jsx';
 import { TopBar, BottomNav, Splash, useAsync } from './components/ui.jsx';
 import { countOpenWrong } from './lib/api.js';
@@ -82,12 +83,30 @@ function TeacherPreviewNote({ children }) {
   return <div className="stack"><div className="alert ok">학생이 보는 화면과 같아요 (선생님 계정은 모든 출판사 유닛이 보입니다). 여기서 풀면 기록은 선생님 계정에 남습니다.</div>{children}</div>;
 }
 
+// 키보드 Backspace = 이전 화면 (글자 입력 중이 아닐 때만). 학생·선생님 화면 공통
+function BackKey() {
+  const nav = useNavigate(); const { pathname } = useLocation();
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Backspace' || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target; const tag = (t?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || t?.isContentEditable) return;
+      e.preventDefault();
+      if (pathname === '/') return;
+      if ((window.history.state?.idx ?? 0) > 0) nav(-1); else nav('/');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [nav, pathname]);
+  return null;
+}
+
 function Gate() {
   const { session, profile } = useAuth();
   if (session === undefined) return <Splash />;
   if (!session) return <Login />;
   if (!profile) return <Splash />;
-  return profile.role === 'teacher' ? <TeacherShell /> : <StudentShell />;
+  return <><BackKey />{profile.role === 'teacher' ? <TeacherShell /> : <StudentShell />}</>;
 }
 
 export default function App() {

@@ -67,4 +67,5 @@ begin
   order by s.school, s.grade, s.class_name, s.name;
 end;
 $$;
+notify pgrst, 'reload schema';
 select 'range level ready' as result;

@@ -6,23 +6,47 @@ import sys, json, struct, zlib, olefile
 EXT_CTRL = {1, 2, 3, 11, 12, 14, 15, 16, 17, 18, 21, 22, 23, 4, 5, 6, 7, 8, 19, 20}  # 8 WCHAR 짜리 컨트롤 문자
 TAB = 9  # 탭도 8 WCHAR
 
-def para_text(b: bytes) -> str:
+def para_text(b: bytes, runs=None, ul_ids=None) -> str:
+    """runs: [(wchar_pos, charshape_id)] (PARA_CHAR_SHAPE), ul_ids: 밑줄 글자모양 id 집합
+    밑줄 구간은 <u>…</u> 로 감싼다 (runs 가 없으면 평문)."""
     out = []
     i = 0
     n = len(b) - 1
+    ul = False; ri = 0; cur_ul = False
     while i < n:
+        pos = i // 2
         c = b[i] | (b[i + 1] << 8)
         i += 2
+        if runs:
+            while ri < len(runs) and runs[ri][0] <= pos:
+                cur_ul = runs[ri][1] in ul_ids; ri += 1
         if c < 32:
             if c in EXT_CTRL:
                 i += 14
             elif c == TAB:
                 i += 14; out.append('\t')
             elif c in (10, 13):
+                if ul: out.append('</u>'); ul = False
                 out.append('\n')
             continue
-        out.append(chr(c) if not (0xD800 <= c <= 0xDFFF) else '')
+        ch = chr(c) if not (0xD800 <= c <= 0xDFFF) else ''
+        if runs and ch:
+            if cur_ul and not ul and ch.strip(): out.append('<u>'); ul = True
+            elif not cur_ul and ul: out.append('</u>'); ul = False
+        out.append(ch)
+    if ul: out.append('</u>')
     return ''.join(out)
+
+def underline_shapes(ole, compressed):
+    """DocInfo 의 글자 모양(CHAR_SHAPE, tag 21) 중 밑줄이 있는 id 집합"""
+    di = ole.openstream('DocInfo').read()
+    di = zlib.decompress(di, -15) if compressed else di
+    ids = set(); k = 0
+    for tag, _, data in records(di):
+        if tag == 21:
+            if len(data) >= 50 and (struct.unpack_from('<I', data, 46)[0] >> 2) & 3: ids.add(k)
+            k += 1
+    return ids
 
 def records(b: bytes):
     o, L = 0, len(b)
@@ -36,13 +60,14 @@ def records(b: bytes):
         yield tag, level, b[o:o + size]
         o += size
 
-def extract(path):
+def extract(path, marks=False):
     ole = olefile.OleFileIO(path)
     fh = ole.openstream('FileHeader').read()
     flags = struct.unpack_from('<I', fh, 36)[0]
     compressed, encrypted, distributed = bool(flags & 1), bool(flags & 2), bool(flags & 4)
     if encrypted:
         raise SystemExit('암호화된 문서')
+    ul_ids = underline_shapes(ole, compressed) if marks else set()
     secs = sorted([e for e in ole.listdir() if len(e) == 2 and e[0] in ('BodyText', 'ViewText') and e[1].startswith('Section')],
                   key=lambda e: int(e[1][7:]))
     items = []  # {'t': text} | {'table': rows, 'cols': cols} | {'cell': (col,row)}
@@ -51,15 +76,22 @@ def extract(path):
         if e[0] == 'ViewText':
             items.append({'t': '[배포용 문서 — 텍스트 보호]'}); continue
         b = zlib.decompress(raw, -15) if compressed else raw
+        pending = None   # 밑줄 표시용: PARA_TEXT 뒤에 오는 PARA_CHAR_SHAPE(68) 와 짝 맞춤
         for tag, level, data in records(b):
             if tag == 67:
+                if pending is not None: items.append({'l': pending[0], 't': para_text(pending[1])})
+                if marks: pending = (level, data); continue
                 items.append({'l': level, 't': para_text(data)})
+            elif tag == 68 and pending is not None:
+                runs = [struct.unpack_from('<II', data, k) for k in range(0, len(data) - 7, 8)]
+                items.append({'l': pending[0], 't': para_text(pending[1], runs, ul_ids)}); pending = None
             elif tag == 77:  # TABLE
                 rows, cols = struct.unpack_from('<HH', data, 4)
                 items.append({'l': level, 'table': rows, 'cols': cols})
             elif tag == 72 and len(data) >= 14:  # LIST_HEADER (cell)
                 col, row = struct.unpack_from('<HH', data, 6)
                 items.append({'l': level, 'cell': [col, row]})
+        if pending is not None: items.append({'l': pending[0], 't': para_text(pending[1])})
     return {'compressed': compressed, 'distributed': distributed, 'items': items}
 
 def flat(items):
@@ -71,5 +103,7 @@ def flat(items):
     return out
 
 if __name__ == '__main__':
-    r = extract(sys.argv[1])
+    # --marks : 밑줄 구간을 <u>…</u> 로 표시 (기출문제 "밑줄 친 …" 문항용)
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    r = extract(args[0], marks='--marks' in sys.argv)
     print(json.dumps({'meta': {k: v for k, v in r.items() if k != 'items'}, 'flat': flat(r['items'])}, ensure_ascii=False, indent=0))

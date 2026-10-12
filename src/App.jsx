@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
-import { HashRouter, Routes, Route, Navigate, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate, NavLink, useLocation, useNavigate, useParams, Link } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/auth.jsx';
 import { TopBar, BottomNav, Splash, useAsync } from './components/ui.jsx';
-import { countOpenWrong } from './lib/api.js';
+import { countOpenWrong, myUnitSteps, stepUnlocked, MATERIALS, STEP_ORDER, STEP_DONE_HINT } from './lib/api.js';
 import Login from './pages/Login.jsx';
 import Password from './pages/Password.jsx';
 import Home from './pages/student/Home.jsx';
@@ -29,14 +29,14 @@ function StudentShell() {
           <Route path="/password" element={<Password />} />
           <Route path="/units" element={<UnitList />} />
           <Route path="/unit/:unitId" element={<UnitMenu />} />
-          <Route path="/unit/:unitId/words" element={<Words />} />
-          <Route path="/unit/:unitId/word-test" element={<WordTest />} />
-          <Route path="/unit/:unitId/dialogue" element={<Dialogue />} />
-          <Route path="/unit/:unitId/dialogue-blank" element={<DialogueBlank />} />
-          <Route path="/unit/:unitId/reading" element={<Reading />} />
-          <Route path="/unit/:unitId/reading-blank" element={<ReadingBlank />} />
-          <Route path="/unit/:unitId/reading-analysis" element={<ReadingAnalysis />} />
-          <Route path="/unit/:unitId/exam" element={<Exam />} />
+          <Route path="/unit/:unitId/words" element={<StepGate k="words"><Words /></StepGate>} />
+          <Route path="/unit/:unitId/word-test" element={<StepGate k="word_test"><WordTest /></StepGate>} />
+          <Route path="/unit/:unitId/dialogue" element={<StepGate k="dialogue"><Dialogue /></StepGate>} />
+          <Route path="/unit/:unitId/dialogue-blank" element={<StepGate k="dialogue_blank"><DialogueBlank /></StepGate>} />
+          <Route path="/unit/:unitId/reading" element={<StepGate k="reading"><Reading /></StepGate>} />
+          <Route path="/unit/:unitId/reading-blank" element={<StepGate k="reading_blank"><ReadingBlank /></StepGate>} />
+          <Route path="/unit/:unitId/reading-analysis" element={<StepGate k="reading_analysis"><ReadingAnalysis /></StepGate>} />
+          <Route path="/unit/:unitId/exam" element={<StepGate k="exam"><Exam /></StepGate>} />
           <Route path="/wrong" element={<WrongNotes />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -76,6 +76,24 @@ function TeacherShell() {
         </Routes>
       </main>
     </>
+  );
+}
+
+// 학습 순서 잠금: 앞 단계를 끝내지 않았으면 자료 대신 안내 (학생만)
+function StepGate({ k, children }) {
+  const { unitId } = useParams();
+  const st = useAsync(() => myUnitSteps(Number(unitId)).catch(() => new Set()), [unitId, k]);
+  if (st.loading) return <Splash />;
+  const done = st.data || new Set();
+  if (stepUnlocked(k, done)) return children;
+  const i = STEP_ORDER.indexOf(k); const prev = STEP_ORDER.slice(0, i).find((x) => !done.has(x));
+  const label = MATERIALS.find((m) => m.key === k)?.label; const prevLabel = MATERIALS.find((m) => m.key === prev)?.label;
+  return (
+    <div className="card stack center">
+      <b>{label}은(는) 아직 잠겨 있어요</b>
+      <div className="muted small">{STEP_DONE_HINT[prev]} 열려요. 먼저 <b>{prevLabel}</b>을 끝내 주세요.</div>
+      <Link className="btn primary" to={`/unit/${unitId}`}>유닛 메뉴로</Link>
+    </div>
   );
 }
 

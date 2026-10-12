@@ -7,10 +7,19 @@ export const MATERIALS = [
   { key: 'dialogue', label: '대화문', desc: '원문 + 해석' },
   { key: 'dialogue_blank', label: '대화문 빈칸', desc: '핵심 표현 채우기' },
   { key: 'reading', label: '본문', desc: '문장별 해석 + 듣기' },
-  { key: 'reading_blank', label: '본문 빈칸시험', desc: '우리말·영문·동사형·어법' },
   { key: 'reading_analysis', label: '본문분석', desc: '문장별 문법·구문 해설로 복습' },
+  { key: 'reading_blank', label: '본문 빈칸시험', desc: '우리말·영문·동사형·어법' },
   { key: 'exam', label: '기출문제', desc: '객관식 + 서술형' },
 ];
+// 학습 순서(위 순서대로 잠금 해제). 각 단계 완료 조건:
+//  단어장: "학습 완료" 버튼 · 단어테스트: 테스트 1회 완료 · 대화문/본문: 읽기 확인 통과 · 대화문 빈칸/본문 빈칸: 1회 완료 · 본문분석: 마지막 단락 "학습 완료"
+export const STEP_ORDER = MATERIALS.map((m) => m.key);
+export const STEP_DONE_HINT = { words: '단어장을 끝까지 보고 "단어장 학습 완료"를 누르면', word_test: '단어테스트를 한 번 끝내면', dialogue: '대화문 읽기 확인을 통과하면', dialogue_blank: '대화문 빈칸을 한 번 끝내면', reading: '본문 읽기 확인을 통과하면', reading_analysis: '본문분석 마지막 단락에서 "학습 완료"를 누르면', reading_blank: '본문 빈칸시험을 한 번 끝내면', exam: '' };
+export const myUnitSteps = (unitId) => rpc('my_unit_steps', { p_unit_id: unitId }).then((rows) => new Set((rows || []).map((r) => r.kind)));
+export const markStepDone = (unitId, kind, extra = {}) => rpc('log_reading', { p_unit_id: unitId, p_kind: kind, p_event: 'check', p_seconds: 0, p_score: extra.score ?? null, p_total: extra.total ?? null, p_passed: true });
+// 어떤 단계가 열렸는지: 앞 단계가 모두 완료돼야 열림 (선생님은 전부)
+export const stepUnlocked = (key, done, isTeacher = false) => { if (isTeacher) return true; const i = STEP_ORDER.indexOf(key); return STEP_ORDER.slice(0, i).every((k) => done.has(k)); };
+
 export const materialLabel = (k) => MATERIALS.find((m) => m.key === k)?.label || k;
 export const DIFF_LABEL = { w2: '우리말 빈칸', w3: '영문 빈칸', w5: '동사형 연습', w6: '어법 선택', low: '단어 빈칸', mid: '어구 빈칸', high: '문장 영작' };
 export const DIFF_DESC = { w2: '영어 문장을 보고 우리말 해석의 빈칸을 채워요', w3: '우리말 해석을 보고 영어 빈칸을 채워요', w5: '괄호 안 동사를 알맞은 형태로 고쳐 써요', w6: '[ ] 안에서 어법에 맞는 것을 골라 써요', low: '문장마다 핵심 단어 1개를 채워요', mid: '2~3단어 어구를 채워요', high: '해석을 보고 문장 전체를 영어로 써요' };
@@ -141,6 +150,45 @@ export async function questionsFromWrongNotes(notes) {
   const keyOf = (q) => `${q.item_type}-${q.item_id}-${q.sub_mode || ''}`;
   return out.sort((a, b) => (order.get(keyOf(a)) ?? 0) - (order.get(keyOf(b)) ?? 0));
 }
+
+// ---------- 읽기 확인 (대화문·본문을 읽었는지) ----------
+export const logReading = (unitId, kind, event, { seconds = 0, score = null, total = null, passed = null } = {}) =>
+  rpc('log_reading', { p_unit_id: unitId, p_kind: kind, p_event: event, p_seconds: Math.round(seconds), p_score: score, p_total: total, p_passed: passed });
+export const myReadingStatus = (unitId) => rpc('my_reading_status', { p_unit_id: unitId }).then((rows) => Object.fromEntries((rows || []).map((r) => [r.kind, r])));
+export const rangeReading = (rangeId, studentId = null) => rpc('range_reading', { p_range_id: rangeId, p_student_id: studentId });
+export const READ_CHECK_N = 5;            // 읽기 확인 문항 수
+export const readCheckPass = (score, total) => total === 0 || score >= Math.ceil(total * 0.8);   // 80% 이상 통과
+// 읽기 확인 문제 만들기: tf = [{q,a}] (본문분석 T/F), blanks = blank_items (빈칸 → 4지선다)
+export function buildReadCheck({ tf = [], blanks = [] }, n = READ_CHECK_N) {
+  const out = [];
+  for (const t of shuffle(tf)) out.push({ kind: 'tf', prompt: t.q, choices: ['T  (본문 내용과 일치)', 'F  (일치하지 않음)'], answer: t.a === 'T' ? 0 : 1 });
+  const pool = blanks.filter((b) => b.prompt && b.answers?.length);
+  const allAns = [...new Set(pool.flatMap((b) => b.answers))];
+  const wc = (x) => x.trim().split(/\s+/).length;
+  for (const b of shuffle(pool)) {
+    // 빈칸이 여러 개면 하나만 남기고 나머지는 채워서 보여줌
+    const keep = Math.floor(Math.random() * b.answers.length); const correct = b.answers[keep]; let k = 0;
+    const prompt = b.prompt.replace(/___/g, () => (k++ === keep ? '______' : b.answers[k - 1] ?? ''));
+    const same = allAns.filter((a) => a !== correct && !b.answers.includes(a) && wc(a) === wc(correct));
+    const other = allAns.filter((a) => a !== correct && !b.answers.includes(a) && wc(a) !== wc(correct));
+    const dis = [...shuffle(same), ...shuffle(other)].slice(0, 3);   // 단어 수가 같은 것을 먼저 고름
+    if (dis.length < 2) continue;
+    const choices = shuffle([correct, ...dis]);
+    out.push({ kind: 'blank', prompt, choices, answer: choices.indexOf(correct) });
+  }
+  // T/F 와 빈칸을 섞되 T/F 우선
+  const tfs = out.filter((q) => q.kind === 'tf'), bls = out.filter((q) => q.kind === 'blank');
+  return [...tfs.slice(0, n), ...bls].slice(0, n);
+}
+
+// ---------- 기출 제출 기록 (1차 75점, 2차 80점 …) ----------
+export const recordExamSession = (unitId, term, qtype, total, correct) => rpc('record_exam_session', { p_unit_id: unitId, p_term: term || null, p_qtype: qtype || null, p_total: total, p_correct: correct });
+export const myExamSessions = (unitId) => supabase.from('exam_sessions').select('*').eq('unit_id', unitId).order('created_at').then(unwrap);
+export const examSessionsOf = (studentId) => supabase.from('exam_sessions').select('*, units(unit_no, grade, title, publishers(name, level))').eq('student_id', studentId).order('created_at').then(unwrap);
+export const examSessionsForRange = (rangeId) => supabase.from('exam_range_units').select('unit_id').eq('range_id', rangeId).then(unwrap)
+  .then((us) => us.length ? supabase.from('exam_sessions').select('student_id, unit_id, term, qtype, score, attempt_no, created_at').in('unit_id', us.map((u) => u.unit_id)).order('created_at').then(unwrap) : []);
+export const ordinal = (n) => `${n}차`;
+export const termShort = (t) => String(t || '').replace(/^예상문제\s*/, '') || '전체';
 
 // ---------- CSV ----------
 export function downloadCsv(filename, rows) {

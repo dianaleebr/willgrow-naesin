@@ -69,6 +69,30 @@ create table if not exists public.reading_analysis (
   updated_at timestamptz default now()
 );
 
+-- 학습 기록: 열람 시간(view) · 읽기 확인/단계 완료(check, passed) — kind = 자료 키
+create table if not exists public.reading_logs (
+  id bigserial primary key,
+  student_id uuid not null references public.profiles(id) on delete cascade,
+  unit_id int not null references public.units(id) on delete cascade,
+  kind text not null check (kind in ('words','word_test','dialogue','dialogue_blank','reading','reading_analysis','reading_blank','exam')),
+  event text not null check (event in ('view','check')),
+  seconds int default 0,
+  score int, total int, passed boolean,
+  created_at timestamptz default now()
+);
+create index if not exists reading_logs_idx on public.reading_logs(student_id, unit_id, kind, event);
+
+-- 기출 제출 기록 (1차 75점, 2차 80점 …)
+create table if not exists public.exam_sessions (
+  id bigserial primary key,
+  student_id uuid not null references public.profiles(id) on delete cascade,
+  unit_id int not null references public.units(id) on delete cascade,
+  term text, qtype text,
+  total int not null, correct int not null, score int not null, attempt_no int not null,
+  created_at timestamptz default now()
+);
+create index if not exists exam_sessions_idx on public.exam_sessions(student_id, unit_id, term, qtype);
+
 create table if not exists public.dialogues (
   id serial primary key,
   unit_id int not null references public.units(id) on delete cascade,
@@ -304,6 +328,14 @@ drop policy if exists reading_analysis_read on public.reading_analysis;
 create policy reading_analysis_read on public.reading_analysis for select to authenticated using (public.can_view_unit(unit_id));
 drop policy if exists reading_analysis_write on public.reading_analysis;
 create policy reading_analysis_write on public.reading_analysis for all to authenticated using (public.is_teacher()) with check (public.is_teacher());
+alter table public.reading_logs enable row level security;
+drop policy if exists reading_logs_own on public.reading_logs;
+create policy reading_logs_own on public.reading_logs for select to authenticated using (student_id = auth.uid() or public.is_teacher());
+drop policy if exists reading_logs_insert on public.reading_logs;
+create policy reading_logs_insert on public.reading_logs for insert to authenticated with check (student_id = auth.uid());
+alter table public.exam_sessions enable row level security;
+drop policy if exists exam_sessions_read on public.exam_sessions;
+create policy exam_sessions_read on public.exam_sessions for select to authenticated using (student_id = auth.uid() or public.is_teacher());
 
 drop policy if exists dialogues_read on public.dialogues;
 create policy dialogues_read on public.dialogues for select to authenticated using (public.can_view_unit(unit_id));

@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
-import { getUnit, listWords, listDialogues, getReading, listBlanks, listExam, wordQuestions, blankQuestions, examQuestions, shuffle, DIFF_LABEL, DIFF_DESC, DIFF_ORDER, listWrongNotes, questionsFromWrongNotes, wordExtra, hasRelation, hasSenses, getAnalysis, markHomeworkDone } from '../../lib/api.js';
+import { getUnit, listWords, listDialogues, getReading, listBlanks, listExam, wordQuestions, blankQuestions, examQuestions, shuffle, DIFF_LABEL, DIFF_DESC, DIFF_ORDER, listWrongNotes, questionsFromWrongNotes, wordExtra, hasRelation, hasSenses, getAnalysis, markHomeworkDone, logReading, myReadingStatus, buildReadCheck, readCheckPass, READ_CHECK_N, myExamSessions, termShort, markStepDone, myUnitSteps } from '../../lib/api.js';
 import { useAuth } from '../../lib/auth.jsx';
 import { useAsync, Loading, ErrorBox, Empty, TtsButton, Toggle, gradeLabel } from '../../components/ui.jsx';
 import QuizRunner from '../../components/QuizRunner.jsx';
@@ -27,6 +27,7 @@ export function Words() {
       {(nSense > 0 || nRel > 0) && <div className="mb"><Toggle value={filter} onChange={setFilter} options={[{ value: 'all', label: `전체 ${words.length}` }, { value: 'sense', label: `다의어 ${nSense}` }, { value: 'rel', label: `유의어·반의어 ${nRel}` }]} /></div>}
       {shown.length === 0 && <Empty>등록된 단어가 없어요.</Empty>}
       {shown.map((w) => <WordRow key={w.id} w={w} hide={hide} openSenses={filter === 'sense'} />)}
+      <StepDoneButton unitId={Number(unitId)} kind="words" label="단어장 학습 완료 (다음: 단어테스트 열림)" />
     </div>
   );
 }
@@ -95,14 +96,16 @@ export function WordTest() {
 // ③ 대화문
 export function Dialogue() {
   const { unitId } = useParams();
-  const st = useAsync(async () => ({ unit: await getUnit(unitId), ds: await listDialogues(unitId) }), [unitId]);
+  const st = useAsync(async () => ({ unit: await getUnit(unitId), ds: await listDialogues(unitId), blanks: await listBlanks(unitId, 'dialogue'), status: await myReadingStatus(unitId) }), [unitId]);
   const [showKo, setShowKo] = useState(true);
+  useViewLog(unitId, 'dialogue');
   if (st.loading) return <Loading />; if (st.error) return <ErrorBox error={st.error} />;
-  const { unit, ds } = st.data;
+  const { unit, ds, blanks, status } = st.data;
   return (
     <div>
       <Head unit={unit} title="대화문" />
       <div className="row between mb"><span className="muted">{ds.length}개 대화</span><Toggle value={showKo} onChange={setShowKo} options={[{ value: true, label: '해석 보기' }, { value: false, label: '해석 숨기기' }]} /></div>
+      {ds.length > 0 && <ReadCheck unitId={Number(unitId)} kind="dialogue" status={status.dialogue} source={{ blanks }} onDone={st.reload} />}
       {ds.length === 0 && <Empty>등록된 대화문이 없어요.</Empty>}
       {ds.map((d) => (
         <div key={d.id} className="card mb">
@@ -144,15 +147,18 @@ export function DialogueBlank() {
 // ⑤ 본문
 export function Reading() {
   const { unitId } = useParams();
-  const st = useAsync(async () => ({ unit: await getUnit(unitId), r: await getReading(unitId) }), [unitId]);
+  const st = useAsync(async () => ({ unit: await getUnit(unitId), r: await getReading(unitId), ana: await getAnalysis(unitId), blanks: await listBlanks(unitId, 'reading', 'w3'), status: await myReadingStatus(unitId) }), [unitId]);
   const [showKo, setShowKo] = useState(true);
+  useViewLog(unitId, 'reading');
   if (st.loading) return <Loading />; if (st.error) return <ErrorBox error={st.error} />;
-  const { unit, r } = st.data;
+  const { unit, r, ana, blanks, status } = st.data;
+  const tf = (ana?.paragraphs || []).flatMap((p) => p.tf || []);
   return (
     <div>
       <Head unit={unit} title="본문" />
       {!r ? <Empty>등록된 본문이 없어요.</Empty> : (<>
         <div className="row between mb"><h3>{r.title}</h3><div className="row"><TtsButton text={r.reading_sentences.map((s) => s.en).join(' ')} label="전체 듣기" /><Toggle value={showKo} onChange={setShowKo} options={[{ value: true, label: '해석' }, { value: false, label: '영어만' }]} /></div></div>
+        <ReadCheck unitId={Number(unitId)} kind="reading" status={status.reading} source={{ tf, blanks }} onDone={st.reload} />
         {r.reading_sentences.map((s, i) => (
           <div key={s.id} className="sentence">
             <div className="en"><span className="muted small">{i + 1}. </span>{s.en} <TtsButton text={s.en} /></div>
@@ -198,18 +204,18 @@ export function ReadingBlank() {
 // ⑦ 기출문제
 export function Exam() {
   const { unitId } = useParams(); const mode = useMode();
-  const st = useAsync(async () => ({ unit: await getUnit(unitId), qs: await listExam(unitId), wrong: await listWrongNotes('open', { itemType: 'exam', unitId: Number(unitId) }) }), [unitId]);
+  const st = useAsync(async () => ({ unit: await getUnit(unitId), qs: await listExam(unitId), wrong: await listWrongNotes('open', { itemType: 'exam', unitId: Number(unitId) }), sessions: await myExamSessions(unitId).catch(() => []) }), [unitId]);
   const [term, setTerm] = useState('');   // 회차: PRE-STEP / 1회 / 2회 …
   const [qtype, setQtype] = useState('');  // '' | mc | essay
   const [run, setRun] = useState(null); const [runMode, setRunMode] = useState('homework'); const [busy, setBusy] = useState(false);
   if (st.loading) return <Loading />; if (st.error) return <ErrorBox error={st.error} />;
-  const { unit, qs, wrong } = st.data;
+  const { unit, qs, wrong, sessions } = st.data;
   const retryWrong = async () => { setBusy(true); try { const list = await questionsFromWrongNotes(wrong); setRunMode('retry'); setRun(list); } finally { setBusy(false); } };
   const termLabel = (t) => String(t || '').replace(/^예상문제\s*/, '') || '기타';
   const termOrder = (t) => { const l = termLabel(t); if (/pre/i.test(l)) return 0; const m = l.match(/(\d+)/); return m ? Number(m[1]) : 99; };
   const terms = [...new Set(qs.map((q) => q.term || ''))].sort((a, b) => termOrder(a) - termOrder(b));
   const sel = qs.filter((q) => (!term || (q.term || '') === term) && (!qtype || q.qtype === qtype));
-  if (run) return <QuizRunner questions={run} mode={runMode === 'retry' ? 'retry' : mode} title={runMode === 'retry' ? `기출문제 오답 다시 풀기 (${run.length})` : `기출문제${term ? ' · ' + termLabel(term) : ''}`} homework={runMode === 'retry' ? undefined : { unitId: Number(unitId), material: 'exam' }} onExit={() => { setRun(null); setRunMode('homework'); st.reload(); }} />;
+  if (run) return <QuizRunner questions={run} mode={runMode === 'retry' ? 'retry' : mode} title={runMode === 'retry' ? `기출문제 오답 다시 풀기 (${run.length})` : `기출문제${term ? ' · ' + termLabel(term) : ''}`} homework={runMode === 'retry' ? undefined : { unitId: Number(unitId), material: 'exam' }} examSession={runMode === 'retry' ? undefined : { unitId: Number(unitId), term: term || null, qtype: qtype || null }} onExit={() => { setRun(null); setRunMode('homework'); st.reload(); }} />;
   return (
     <div className="stack">
       <Head unit={unit} title="기출문제" />
@@ -232,6 +238,7 @@ export function Exam() {
           </div>
         </div>
         <div className="muted">{sel.length}문항 (객관식 {sel.filter((q) => q.qtype === 'mc').length} · 서술형 {sel.filter((q) => q.qtype === 'essay').length})</div>
+        <ExamHistory sessions={sessions} term={term} qtype={qtype} />
         <button className="btn primary lg block" disabled={!sel.length} onClick={() => { setRunMode('homework'); setRun(examQuestions(sel, Number(unitId))); }}>풀기 시작</button>
         {wrong.length > 0 && <button className="btn lg block" disabled={busy} onClick={retryWrong}>{busy ? '준비 중…' : `이 유닛에서 틀린 문제만 모아 풀기 (${wrong.length})`}</button>}
         {wrong.length > 0 && <div className="muted small">PRE-STEP·1회·2회 등 회차에 상관없이, 이 유닛 예상문제에서 틀렸고 아직 해결하지 못한 문제를 모두 모읍니다.</div>}
@@ -251,7 +258,7 @@ export function ReadingAnalysis() {
   const paras = ana?.paragraphs || [];
   if (!paras.length) return <div><Head unit={unit} title="본문분석" /><Empty>이 유닛의 본문분석 자료가 아직 없어요.</Empty></div>;
   const p = paras[Math.min(pi, paras.length - 1)];
-  const finish = async () => { try { await markHomeworkDone(profile.id, profile.class_name, Number(unitId), 'reading_analysis'); } catch {} setDone(true); };
+  const finish = async () => { try { await markHomeworkDone(profile.id, profile.class_name, Number(unitId), 'reading_analysis'); } catch {} try { await markStepDone(Number(unitId), 'reading_analysis'); } catch {} setDone(true); };
   return (
     <div className="stack">
       <Head unit={unit} title="본문분석" />
@@ -359,6 +366,99 @@ function TfCheck({ items }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ---------- 읽기 확인: 열람 시간 기록 + 읽기 확인 문제 ----------
+// 화면을 보는 동안의 시간을 기록 (화면을 떠나거나 숨길 때 서버에 보냄, 10초 미만은 기록 안 함)
+function useViewLog(unitId, kind) {
+  useEffect(() => {
+    let start = Date.now(); let sent = 0;
+    const flush = () => { const sec = (Date.now() - start) / 1000; start = Date.now(); if (sec >= 10) { sent += sec; logReading(Number(unitId), kind, 'view', { seconds: sec }).catch(() => {}); } };
+    const onVis = () => { if (document.visibilityState === 'hidden') flush(); else start = Date.now(); };
+    document.addEventListener('visibilitychange', onVis);
+    const t = setInterval(flush, 120000);
+    return () => { document.removeEventListener('visibilitychange', onVis); clearInterval(t); flush(); };
+  }, [unitId, kind]);
+}
+
+function ReadCheck({ unitId, kind, status, source, onDone }) {
+  const { profile } = useAuth();
+  const [qs, setQs] = useState(null); const [ans, setAns] = useState({}); const [result, setResult] = useState(null); const [busy, setBusy] = useState(false);
+  const label = kind === 'dialogue' ? '대화문' : '본문';
+  const material = kind;
+  const available = (source.tf?.length || 0) + (source.blanks?.length || 0);
+  const start = () => { setQs(buildReadCheck(source)); setAns({}); setResult(null); window.scrollTo(0, 0); };
+  const submit = async () => {
+    if (qs.some((_, i) => ans[i] == null)) return;
+    const score = qs.filter((q, i) => ans[i] === q.answer).length; const passed = readCheckPass(score, qs.length);
+    setBusy(true);
+    try { await logReading(unitId, kind, 'check', { score, total: qs.length, passed }); if (passed) await markHomeworkDone(profile.id, profile.class_name, unitId, material).catch(() => {}); } catch {} finally { setBusy(false); }
+    setResult({ score, passed });
+  };
+  if (qs) {
+    return (
+      <div className="card stack mb" style={{ borderColor: 'var(--red)' }}>
+        <div className="row between"><b>{label} 읽기 확인 ({qs.length}문제)</b>{!result && <button className="btn sm ghost" onClick={() => setQs(null)}>닫기</button>}</div>
+        {!result && <div className="muted small">{label}을 읽은 내용으로 풀어요. {Math.ceil(qs.length * 0.8)}문제 이상 맞히면 통과!</div>}
+        {qs.map((q, i) => (
+          <div key={i} className="stack" style={{ gap: 6 }}>
+            <div className={q.kind === 'blank' ? 'en' : 'en'} style={{ fontSize: 15, lineHeight: 1.5 }}><span className="muted small">{i + 1}. </span>{q.kind === 'blank' ? <><span className="muted small">빈칸에 알맞은 것은? </span><span style={{ whiteSpace: 'pre-wrap' }}>{q.prompt}</span></> : q.prompt}</div>
+            <div className="choices" style={{ margin: 0 }}>
+              {q.choices.map((c, k) => { let cls = 'choice'; if (result) { if (k === q.answer) cls += ' correct'; else if (ans[i] === k) cls += ' wrong'; } else if (ans[i] === k) cls += ' selected'; return <button key={k} type="button" className={cls} disabled={!!result} onClick={() => setAns({ ...ans, [i]: k })}><span className="n">{k + 1}</span><span className="en">{c}</span></button>; })}
+            </div>
+          </div>
+        ))}
+        {!result
+          ? <button className="btn primary lg block" disabled={busy || qs.some((_, i) => ans[i] == null)} onClick={submit}>{busy ? '채점 중…' : '제출'}</button>
+          : (
+            <div className={`feedback ${result.passed ? 'ok' : 'no'}`}>
+              <b>{result.passed ? '통과!' : '아쉬워요'}</b> {result.score} / {qs.length} 정답{result.passed ? ' — 읽기 확인 완료로 기록됐어요.' : ` — ${label}을 다시 읽고 한 번 더 풀어 보세요.`}
+              <div className="row mt">{!result.passed && <button className="btn primary" onClick={start}>다시 풀기</button>}<button className="btn" onClick={() => { setQs(null); onDone?.(); }}>닫기</button></div>
+            </div>
+          )}
+      </div>
+    );
+  }
+  const passed = !!status?.passed;
+  return (
+    <div className={`card mb row between ${passed ? 'green' : ''}`} style={{ flexWrap: 'wrap', gap: 8 }}>
+      <div>
+        <b>{label} 읽기 확인</b>
+        <div className="muted small">{passed ? `통과 ✓ (${status.best_score}/${status.best_total})` : status?.checks ? `아직 통과 못 함 (최고 ${status.best_score}/${status.best_total}) — 다시 읽고 도전` : `다 읽은 뒤 ${Math.min(READ_CHECK_N, available) || READ_CHECK_N}문제로 확인해요`}{status?.seconds >= 60 ? ` · 읽은 시간 ${Math.round(status.seconds / 60)}분` : ''}</div>
+      </div>
+      {available > 0 ? <button className={`btn ${passed ? '' : 'primary'}`} onClick={start}>{passed ? '다시 풀기' : '읽기 확인 문제 풀기'}</button> : <span className="muted small">확인 문제 자료 없음</span>}
+    </div>
+  );
+}
+
+// 기출 제출 기록: 지금 고른 회차·유형의 1차·2차… 점수
+function ExamHistory({ sessions, term, qtype }) {
+  const mine = (sessions || []).filter((x) => (x.term || '') === (term || '') && (x.qtype || '') === (qtype || ''));
+  const others = (sessions || []).length - mine.length;
+  if (!mine.length) return others > 0 ? <div className="muted small">이 회차·유형은 아직 제출 기록이 없어요. (다른 회차 제출 {others}회)</div> : null;
+  const best = Math.max(...mine.map((x) => x.score));
+  return (
+    <div className="card soft">
+      <div className="row between"><b>제출 기록 · {termShort(term)}{qtype ? (qtype === 'mc' ? ' 객관식' : ' 서술형') : ''}</b><span className="muted small">최고 {best}점</span></div>
+      <div className="row" style={{ flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+        {mine.map((x) => <span key={x.id} className={`badge ${x.score >= 80 ? 'green' : x.score >= 50 ? 'yellow' : 'red'}`} title={new Date(x.created_at).toLocaleString('ko-KR')}>{x.attempt_no}차 제출 {x.score}점 <span className="muted">({x.correct}/{x.total})</span></span>)}
+      </div>
+    </div>
+  );
+}
+
+// 보기만 하는 자료(단어장)의 "학습 완료" 버튼 — 다음 단계 잠금 해제
+function StepDoneButton({ unitId, kind, label }) {
+  const { profile } = useAuth();
+  const st = useAsync(() => myUnitSteps(unitId), [unitId]);
+  const [busy, setBusy] = useState(false);
+  const done = st.data?.has(kind);
+  const click = async () => { setBusy(true); try { await markStepDone(unitId, kind); await markHomeworkDone(profile.id, profile.class_name, unitId, kind).catch(() => {}); st.reload(); } finally { setBusy(false); } };
+  return (
+    <div className="mt">
+      {done ? <div className="alert ok">학습 완료 ✓ 다음 단계가 열려 있어요.</div> : <button className="btn primary lg block" disabled={busy || st.loading} onClick={click}>{busy ? '저장 중…' : label}</button>}
     </div>
   );
 }

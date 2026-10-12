@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { recordAttempt, markHomeworkDone } from '../lib/api.js';
+import { recordAttempt, markHomeworkDone, recordExamSession, markStepDone } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { TtsButton, RichText, plainText } from './ui.jsx';
 import { speak } from '../lib/tts.js';
@@ -18,7 +18,7 @@ const loadSave = (key) => { try { const v = JSON.parse(localStorage.getItem(key)
 const writeSave = (key, v) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* ignore */ } };
 const clearSave = (key) => { try { localStorage.removeItem(key); } catch { /* ignore */ } };
 
-export default function QuizRunner({ questions: initialQuestions, mode = 'homework', title, homework, onExit }) {
+export default function QuizRunner({ questions: initialQuestions, mode = 'homework', title, homework, onExit, examSession }) {
   const { profile } = useAuth();
   const saveKey = saveKeyOf(profile, title, homework);
   const [pending, setPending] = useState(() => {   // 저장된 진행이 있으면 이어서 풀지 물어봄
@@ -44,9 +44,15 @@ export default function QuizRunner({ questions: initialQuestions, mode = 'homewo
     if (q?.speak) speak(q.speak);
   }, [idx, q]);
 
+  const [attemptNo, setAttemptNo] = useState(null);
   useEffect(() => {
     if (phase === 'done' && homework && profile) {
       markHomeworkDone(profile.id, profile.class_name, homework.unitId, homework.material, homework.difficulty).catch(() => {});
+      if (mode !== 'retry' && ['word_test', 'dialogue_blank', 'reading_blank', 'exam'].includes(homework.material)) markStepDone(homework.unitId, homework.material, { score: results.filter((r) => r.correct).length, total: results.length }).catch(() => {});
+    }
+    // 기출문제 한 번 풀기 완료 → 제출 기록 (N차 · 점수)
+    if (phase === 'done' && examSession && mode !== 'retry' && results.length > 0) {
+      recordExamSession(examSession.unitId, examSession.term, examSession.qtype, results.length, results.filter((r) => r.correct).length).then((n) => setAttemptNo(n)).catch(() => {});
     }
   }, [phase]); // eslint-disable-line
 
@@ -92,7 +98,7 @@ export default function QuizRunner({ questions: initialQuestions, mode = 'homewo
   const next = () => { if (idx + 1 < questions.length) setIdx(idx + 1); else { clearSave(saveKey); setPhase('done'); } };
   const onKey = (e) => { if (e.key === 'Enter') { e.preventDefault(); phase === 'answer' ? submit() : next(); } };
 
-  if (phase === 'done') return <ResultScreen title={title} results={results} mode={mode} onExit={onExit} homework={homework} />;
+  if (phase === 'done') return <ResultScreen title={title} results={results} mode={mode} onExit={onExit} homework={homework} attemptNo={attemptNo} />;
 
   const n = questions.length;
   const correctSoFar = results.filter((r) => r.correct).length;
@@ -202,7 +208,7 @@ function BlankPrompt({ q, values, setValues, disabled, onKey, inputRef }) {
   );
 }
 
-export function ResultScreen({ title, results, mode, onExit, homework }) {
+export function ResultScreen({ title, results, mode, onExit, homework, attemptNo }) {
   const nav = useNavigate();
   const [retry, setRetry] = useState(null);
   const wrong = results.filter((r) => !r.correct);
@@ -214,6 +220,7 @@ export function ResultScreen({ title, results, mode, onExit, homework }) {
         <img src={`${import.meta.env.BASE_URL || '/'}w-symbol.png`} alt="" style={{ width: 48 }} />
         <div className="muted">{title}{mode === 'retry' ? ' (오답 재풀이)' : ''}</div>
         <div className={`score ${score >= 80 ? 'green' : 'red'}`}>{score}점</div>
+        {attemptNo && <div className="badge" style={{ marginBottom: 6 }}>{attemptNo}차 제출</div>}
         <div>{results.length}문제 중 <b className="green">{results.length - wrong.length}개 정답</b>, <b className="red">{wrong.length}개 오답</b></div>
         {wrong.length > 0 && <div className="muted small mt">틀린 문제는 오답노트에 자동 저장되었어요.</div>}
         {homework && <div className="badge green mt">숙제 완료 처리됨</div>}

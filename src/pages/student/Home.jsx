@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../lib/auth.jsx';
-import { myRanges, rangeProgress, myHomework, countOpenWrong, liveForClass, dday, materialLabel, DIFF_LABEL, DIFF_ORDER } from '../../lib/api.js';
+import { myRanges, rangeProgress, rangeReading, myHomework, countOpenWrong, liveForClass, dday, materialLabel, DIFF_LABEL, DIFF_ORDER } from '../../lib/api.js';
 import { useAsync, Loading, ErrorBox, Progress, Empty, unitLabel } from '../../components/ui.jsx';
 
 export default function Home() {
@@ -12,7 +12,8 @@ export default function Home() {
   const st = useAsync(async () => {
     const [ranges, hw, wrong] = await Promise.all([myRanges(profile), myHomework(profile.class_name), countOpenWrong()]);
     const progress = ranges.length ? await rangeProgress(ranges[0].id, profile.id) : [];
-    return { ranges, hw, wrong, progress: progress?.[0] || null };
+    const reading = ranges.length ? await rangeReading(ranges[0].id, profile.id).catch(() => []) : [];
+    return { ranges, hw, wrong, progress: progress?.[0] || null, reading: reading?.[0] || null };
   }, [profile.id]);
 
   // 수업 모드: 선생님이 "지금 풀 자료"를 지정하면 10초 안에 뜸
@@ -28,7 +29,7 @@ export default function Home() {
 
   if (st.loading) return <Loading />;
   if (st.error) return <ErrorBox error={st.error} />;
-  const { ranges, hw, wrong, progress } = st.data;
+  const { ranges, hw, wrong, progress, reading } = st.data;
   const range = ranges[0];
   const d = range ? dday(range.exam_date) : null;
 
@@ -58,7 +59,9 @@ export default function Home() {
           {progress && (
             <div className="stack mt">
               <Progress label="단어테스트" pct={progress.word_pct} sub={`${progress.word_done}/${progress.word_total}`} />
+              {reading && reading.dialogue_total > 0 && <Progress label="대화문 읽기 확인" pct={Math.round(reading.dialogue_passed / reading.dialogue_total * 100)} sub={`${reading.dialogue_passed}/${reading.dialogue_total} 유닛`} />}
               <Progress label="대화문 빈칸" pct={progress.dialogue_pct} sub={`${progress.dialogue_done}/${progress.dialogue_total}`} />
+              {reading && reading.reading_total > 0 && <Progress label="본문 읽기 확인" pct={Math.round(reading.reading_passed / reading.reading_total * 100)} sub={`${reading.reading_passed}/${reading.reading_total} 유닛`} />}
               <Progress label="본문 빈칸" pct={progress.reading_pct} sub={`${progress.reading_done}/${progress.reading_total}`} />
               {progress.reading_by_diff && Object.keys(progress.reading_by_diff).length > 1 && (
                 <div className="row small muted" style={{ gap: 10 }}>{DIFF_ORDER.filter((k) => progress.reading_by_diff[k]).map((k) => <span key={k}>{DIFF_LABEL[k]} <b className="en">{progress.reading_by_diff[k].pct}%</b></span>)}</div>

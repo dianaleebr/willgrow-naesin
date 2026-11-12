@@ -89,7 +89,8 @@ export function gradeText(studentAnswer, answer) {
   if (answers.some((a) => (korean ? normalizeKo(a) : normalizeEn(a)) === stu)) return true;
   // 영어: 같은 뜻의 표현 (Can you = Could you, be going to = will ...) 은 정답
   if (!korean) { const c = canonEn(stu); return answers.some((a) => canonEn(normalizeEn(a)) === c); }
-  return false;
+  // 우리말: 띄어쓰기·조사·어미가 달라도, 같은 뜻의 다른 말(유의어)이어도 정답 (우리말 빈칸 포함)
+  return matchMeaning(studentAnswer, answers.join('/')).ok;
 }
 
 // ---------- 영→한 (뜻 쓰기) 느슨한 채점 ----------
@@ -97,8 +98,11 @@ export function gradeText(studentAnswer, answer) {
 //   예) refuse 정답 "~을 거부하다" 에 "거절하다" → 정답 인정, "정확한 뜻: ~을 거부하다" 표시
 //       "거절" (명사형) → 품사가 다르므로 오답
 const stripParen = (s) => String(s ?? '').replace(/\([^)]*\)/g, '');
-const PRED_END = ['스러운', '스럽다', '시키다', '당하다', '로운', '롭다', '하다', '되다', '하는', '되는', '한', '된', '운', '은', '는', '다'];
+const PRED_END = ['스러운', '스럽다', '스러워', '시키다', '시킨', '당하다', '당한', '로운', '롭다', '하기', '되기', '하다', '되다', '하는', '되는', '하여', '해서', '하면', '하고', '하며', '한다', '된다', '합니다', '됩니다', '했다', '됐다', '함', '됨', '한', '된', '운', '은', '는', '다'];
 const ADV_END = ['적으로', '스레', '롭게', '하게', '되게', '히', '게'];
+const PARTICLES = ['으로써', '으로서', '에게서', '에게', '에서', '으로', '로써', '로서', '까지', '부터', '처럼', '보다', '마다', '조차', '밖에', '이다', '을', '를', '이', '가', '은', '는', '의', '에', '와', '과', '로', '도', '만'];
+// 끝에 붙은 조사를 떼 봄 (답 어간과 맞을 때만 사용)
+const stripParticle = (s) => { for (const p of PARTICLES) if (s.length > p.length + 1 && s.endsWith(p)) return s.slice(0, -p.length); return s; };
 const N_SYL = ['른', '큰', '쁜', '픈', '센', '린', '진', '친', '싼', '짠', '먼', '흰', '긴', '난', '푼', '뜬', '잔', '찬', '단'];
 // 어간 + 품사 부류 ('pred' 동사·형용사 | 'adv' 부사 | 'noun' 그 외)
 export function koStem(norm) {
@@ -134,15 +138,20 @@ export function matchMeaning(studentAnswer, koMeaning) {
     const n = normalizeKo(m); const core = normalizeKo(stripParen(m));
     if (n === stu || core === stu) return { ok: true, exact: true, matched: m };
   }
-  const [ss, cs] = koStem(stu);
-  for (const m of meanings) {
-    const core = normalizeKo(stripParen(m)); if (!core) continue;
-    const [sm, cm] = koStem(core);
-    if (cs !== cm) continue;                       // 품사가 다르면 인정 안 함
-    if (ss === sm) return { ok: true, exact: false, matched: m };
-    const ga = synGroupOf(ss), gb = synGroupOf(sm);
-    if (ga && gb && [...ga].some((g) => gb.has(g))) return { ok: true, exact: false, matched: m };
-  }
+  const tryStem = (cand) => {
+    const [ss, cs] = koStem(cand);
+    for (const m of meanings) {
+      const core = normalizeKo(stripParen(m)); if (!core) continue;
+      const [sm, cm] = koStem(core);
+      if ((cs === 'pred') !== (cm === 'pred')) continue;   // 서술형(동사·형용사) ↔ 명사/부사 는 인정 안 함
+      if (ss === sm) return m;
+      const ga = synGroupOf(ss), gb = synGroupOf(sm);
+      if (ga && gb && [...ga].some((g) => gb.has(g))) return m;
+    }
+    return null;
+  };
+  const hit = tryStem(stu) || (stripParticle(stu) !== stu ? tryStem(stripParticle(stu)) : null);
+  if (hit) return { ok: true, exact: false, matched: hit };
   return { ok: false, exact: false, matched: null };
 }
 export function gradeMeaning(studentAnswer, koMeaning) { return matchMeaning(studentAnswer, koMeaning).ok; }

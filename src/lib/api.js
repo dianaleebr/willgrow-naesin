@@ -18,7 +18,9 @@ export const STEP_DONE_HINT = { words: '단어장을 끝까지 보고 "단어장
 export const myUnitSteps = (unitId) => rpc('my_unit_steps', { p_unit_id: unitId }).then((rows) => new Set((rows || []).map((r) => r.kind)));
 export const markStepDone = (unitId, kind, extra = {}) => rpc('log_reading', { p_unit_id: unitId, p_kind: kind, p_event: 'check', p_seconds: 0, p_score: extra.score ?? null, p_total: extra.total ?? null, p_passed: true });
 // 어떤 단계가 열렸는지: 앞 단계가 모두 완료돼야 열림 (선생님은 전부)
-export const stepUnlocked = (key, done, isTeacher = false) => { if (isTeacher) return true; const i = STEP_ORDER.indexOf(key); return STEP_ORDER.slice(0, i).every((k) => done.has(k)); };
+// 배정된 숙제(마감 전)는 앞 단계를 안 했어도 바로 열림
+export const unitHomeworkMaterials = (className, unitId) => (className ? supabase.from('homework').select('material').eq('class_name', className).eq('unit_id', unitId).gte('due_date', today()).then(unwrap).then((rows) => new Set(rows.map((r) => r.material))) : Promise.resolve(new Set()));
+export const stepUnlocked = (key, done, isTeacher = false, hw = null) => { if (isTeacher) return true; if (hw && hw.has(key)) return true; const i = STEP_ORDER.indexOf(key); return STEP_ORDER.slice(0, i).every((k) => done.has(k)); };
 
 export const materialLabel = (k) => MATERIALS.find((m) => m.key === k)?.label || k;
 export const DIFF_LABEL = { w2: '우리말 빈칸', w3: '영문 빈칸', w5: '동사형 연습', w6: '어법 선택', low: '단어 빈칸', mid: '어구 빈칸', high: '문장 영작' };

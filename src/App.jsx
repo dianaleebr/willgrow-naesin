@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate, NavLink, useLocation, useNavigate, useParams, Link } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/auth.jsx';
 import { TopBar, BottomNav, Splash, useAsync } from './components/ui.jsx';
-import { countOpenWrong, myUnitSteps, stepUnlocked, MATERIALS, STEP_ORDER, STEP_DONE_HINT } from './lib/api.js';
+import { countOpenWrong, myUnitSteps, stepUnlocked, unitHomeworkMaterials, MATERIALS, STEP_ORDER, STEP_DONE_HINT } from './lib/api.js';
 import Login from './pages/Login.jsx';
 import Password from './pages/Password.jsx';
 import Home from './pages/student/Home.jsx';
@@ -82,10 +82,11 @@ function TeacherShell() {
 // 학습 순서 잠금: 앞 단계를 끝내지 않았으면 자료 대신 안내 (학생만)
 function StepGate({ k, children }) {
   const { unitId } = useParams();
-  const st = useAsync(() => myUnitSteps(Number(unitId)).catch(() => new Set()), [unitId, k]);
+  const { profile } = useAuth();
+  const st = useAsync(async () => ({ done: await myUnitSteps(Number(unitId)).catch(() => new Set()), hw: await unitHomeworkMaterials(profile?.class_name, Number(unitId)).catch(() => new Set()) }), [unitId, k]);
   if (st.loading) return <Splash />;
-  const done = st.data || new Set();
-  if (stepUnlocked(k, done)) return children;
+  const done = st.data?.done || new Set(); const hw = st.data?.hw || new Set();
+  if (stepUnlocked(k, done, false, hw)) return children;
   const i = STEP_ORDER.indexOf(k); const prev = STEP_ORDER.slice(0, i).find((x) => !done.has(x));
   const label = MATERIALS.find((m) => m.key === k)?.label; const prevLabel = MATERIALS.find((m) => m.key === prev)?.label;
   return (
